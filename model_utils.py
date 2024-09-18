@@ -38,3 +38,27 @@ def build_model(config: Dict[str, Any]) -> nn.Module:
 
     return model
     
+def build_incremental_model(config: Dict[str, Any]) -> nn.Module:
+    in_channels = 1 if config["dataset"] == "MNIST" else 3
+
+    if config["backbone"]:
+        backbone = get_backbone_class(
+            "models.backbone", config["backbone"] + "Backbone"
+        )
+    else:
+        backbone = None
+
+    model = RolanNET(
+        num_classes=0,
+        activation="logs",
+        lamb=config["rolann_lamb"],
+        pretrained=config["pretrained"],
+        backbone=backbone,
+        in_channels=in_channels,
+        sparse=config["sparse"],
+        dropout_rate=config["dropout_rate"],
+        device=config["device"],
+        incremental=True
+    ).to(config["device"])
+
+    return model

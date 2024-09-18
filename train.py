@@ -19,11 +19,11 @@ def train(
     criterion = nn.CrossEntropyLoss()
     optimizer = (
         optim.Adam(model.parameters(), lr=config["learning_rate"], weight_decay=1e-5)
-        if model.backbone
+        if model.backbone or not config["freeze"]
         else None
     )
 
-    results: Dict[str, List[int]] = {
+    results: Dict[str, List[float]] = {
         "train_loss": [],
         "train_accuracy": [],
         "test_loss": [],

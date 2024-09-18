@@ -1,3 +1,4 @@
+from models.ROLANN_incremental import ROLANN_Incremental
 from models.backbone import Backbone
 from models.ROLANN import ROLANN as ROLANN
 from models.ROLANN_optim import ROLANN as ROLANN_optim
@@ -20,6 +21,7 @@ class RolanNET(nn.Module):
         dropout_rate: float = 0.0,
         optim: bool = False,
         freeze: bool = False,
+        incremental: bool = False
     ) -> None:
         super(RolanNET, self).__init__()
 
@@ -34,6 +36,15 @@ class RolanNET(nn.Module):
 
         if optim:
             self.rolann = ROLANN_optim(
+                num_classes, activation=activation, lamb=lamb, sparse=sparse, dropout_rate = dropout_rate,
+            ).to(self.device)
+        else:
+            self.rolann = ROLANN(
+                num_classes, activation=activation, lamb=lamb, sparse=sparse, dropout_rate = dropout_rate,
+            ).to(self.device)
+
+        if incremental:
+            self.rolann = ROLANN_Incremental(
                 num_classes, activation=activation, lamb=lamb, sparse=sparse, dropout_rate = dropout_rate,
             ).to(self.device)
         else:

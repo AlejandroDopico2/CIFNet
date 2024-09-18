@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 
-def test(
+def evaluate(
     model: nn.Module,
     test_loader: DataLoader,
     criterion: nn.Module,

@@ -1,15 +1,16 @@
 import argparse
 import os
-from train import train
-from data_utils import set_dataloaders
-from model_utils import build_model
+from data_utils import get_transforms
+from incremental_train import train
+from incremental_data_utils import get_datasets
+from model_utils import build_incremental_model
 from plotting import plot_results
 from config import get_config
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train a CV model with a specified backbone and parameters."
+        description="Train a incremental CV model with a specified backbone and parameters."
     )
 
     # Dataset related arguments
@@ -65,6 +66,12 @@ def parse_args() -> argparse.Namespace:
         default=0.001,
         help="Learning rate term for the backbone model.",
     )
+    model_group.add_argument(
+        "--freeze",
+        default=False,
+        action="store_true",
+        help="Freeze the backbone model during training.",
+    )
 
     # ROLANN specific arguments
     rolann_group = parser.add_argument_group(
@@ -94,6 +101,35 @@ def parse_args() -> argparse.Namespace:
         help="Dropout rate for the ROLANN layer."
     )
 
+    # Incremental learning specific arguments
+    incremental_group = parser.add_argument_group(
+        "Incremental Learning", "Arguments related to incremental learning"
+    )
+    incremental_group.add_argument(
+        "--num_tasks",
+        type=int,
+        default=5,
+        help="Number of tasks in the incremental learning setup.",
+    )
+    incremental_group.add_argument(
+        "--classes_per_task",
+        type=int,
+        default=2,
+        help="Number of classes introduced in each task.",
+    )
+    incremental_group.add_argument(
+        "--initial_tasks",
+        type=int,
+        default=1,
+        help="Number of tasks to start training.",
+    )
+    incremental_group.add_argument(
+        "--samples_per_task",
+        type=int,
+        default=100,
+        help="Number samples per task.",
+    )
+
     # Training process arguments
     training_group = parser.add_argument_group(
         "Training", "Arguments related to the training process"
@@ -117,7 +153,7 @@ def parse_args() -> argparse.Namespace:
         default=".",
         help="Directory to save output files and plots.",
     )
-
+      
     return parser.parse_args()
 
 
@@ -138,10 +174,10 @@ def main() -> None:
     )
     print(f"Use WandB: {'Enabled' if args.use_wandb else 'Disabled'}")
 
-    train_loader, test_loader = set_dataloaders(config)
-    model = build_model(config)
+    train_dataset, test_dataset = get_datasets(config["dataset"], binary=config["binary"], transform = get_transforms(config["dataset"], config["flatten"]))
+    model = build_incremental_model(config)
 
-    results = train(model, train_loader, test_loader, config)
+    results = train(model, train_dataset, test_dataset, config)
     print(f"Train Accuracy: {results['train_accuracy'][-1]:.4f}")
     print(f"Test Accuracy: {results['test_accuracy'][-1]:.4f}")
 
@@ -150,7 +186,6 @@ def main() -> None:
 
     plot_results(results, save_path = plot_path)
     print(f"Plot saved to: {plot_path}")
-
 
 
 if __name__ == "__main__":
