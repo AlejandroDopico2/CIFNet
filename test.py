@@ -23,11 +23,7 @@ def evaluate(
         for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
 
-            if num_classes == 2:
-                labels = labels.float()
-            else:
-                labels = torch.nn.functional.one_hot(labels, num_classes=num_classes)
-
+            labels = torch.nn.functional.one_hot(labels, num_classes=num_classes)
             labels = process_labels(labels)
 
             outputs = model(inputs)

@@ -4,7 +4,6 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
-import wandb
 from incremental_data_utils import prepare_data
 from test import evaluate
 
@@ -34,6 +33,7 @@ def train(
     task_accuracies: Dict[int, List[float]] = {i: [] for i in range(config["num_tasks"])}
 
     if config["use_wandb"]:
+        import wandb
         wandb.init(project="RolanNet-Model", config=config)
         wandb.watch(model)
 
@@ -43,11 +43,10 @@ def train(
 
         model.rolann.add_num_classes(classes_per_task)
 
-        
         # Prepare data for current task
         train_subset = prepare_data(
             train_dataset,
-            class_range=range(task * classes_per_task, task+1 * classes_per_task),
+            class_range=range(task * classes_per_task, (task+1) * classes_per_task),
             samples_per_class=config["samples_per_class"]
         )
 
@@ -98,32 +97,41 @@ def train(
 
             print(f"Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}")
 
-            # test_subset = prepare_data(
-            #     test_dataset,
-            #     class_range=range(task * classes_per_task, task+1 * classes_per_task),
-            #     samples_per_class=config["samples_per_class"]
-            # )
-            
-            # test_loader = DataLoader(test_subset, batch_size=config["batch_size"], shuffle=False)
+            # Evaluate on all tasks seen so far
+            for eval_task in range(task + 1):
+                test_subset = prepare_data(
+                    test_dataset,
+                    class_range=range(eval_task * classes_per_task, (eval_task + 1) * classes_per_task),
+                    samples_per_class=config["samples_per_class"]
+                )
+                
+                test_loader = DataLoader(test_subset, batch_size=config["batch_size"], shuffle=False)
 
-            # test_loss, test_accuracy = evaluate(
-            #     model, test_loader, criterion, epoch, num_classes = (task + 1) * classes_per_task, device = device
-            # )
-            
-            # if config["use_wandb"]:
-            #     wandb.log(
-            #         {
-            #             "train_accuracy": epoch_acc,
-            #             "train_loss": epoch_loss,
-            #             "test_accuracy": test_accuracy,
-            #             "test_loss": test_loss,
-            #         }
-            #     )
+                test_loss, test_accuracy = evaluate(
+                    model, test_loader, criterion, epoch, num_classes = (task + 1) * classes_per_task, device = device
+                )
+                
+                task_accuracies[eval_task].append(test_accuracy)
 
-            # results["train_loss"].append(epoch_loss)
-            # results["train_accuracy"].append(epoch_acc)
-            # results["test_loss"].append(test_loss)
-            # results["test_accuracy"].append(test_accuracy)
+                if eval_task == task:  # Only log the current task's performance
+                    if config["use_wandb"]:
+                        wandb.log(
+                            {
+                                f"train_accuracy_task_{task+1}": epoch_acc,
+                                f"train_loss_task_{task+1}": epoch_loss,
+                                f"test_accuracy_task_{task+1}": test_accuracy,
+                                f"test_loss_task_{task+1}": test_loss,
+                            }
+                        )
+
+                    results["train_loss"].append(epoch_loss)
+                    results["train_accuracy"].append(epoch_acc)
+                    results["test_loss"].append(test_loss)
+                    results["test_accuracy"].append(test_accuracy)
+
+    # Add task accuracies to results
+    for task, accuracies in task_accuracies.items():
+        results[f"task_{task+1}_accuracy"] = accuracies
 
     if config["use_wandb"]:
         wandb.finish()

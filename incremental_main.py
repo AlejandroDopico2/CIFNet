@@ -163,16 +163,27 @@ def main() -> None:
 
     # Print parsed arguments
     print(f"Dataset: {args.dataset}")
-    print(
-        f"Backbone: {args.backbone} {'not' if not args.pretrained else ''} pretrained"
-    )
-    print(f"Binary Classification: {args.binary}")
+    print(f"Backbone: {args.backbone} ({'pretrained' if args.pretrained else 'not pretrained'}) {'(Frozen)' if args.freeze else ''}")
+    print(f"Binary Classification: {'Enabled' if args.binary else 'Disabled'}")
     print(f"Batch Size: {args.batch_size}")
+    print(f"Number of Instances: {args.num_instances}")
     print(f"Epochs: {args.epochs}")
+    print(f"Learning Rate: {args.learning_rate}")
+
     print(
-        f"ROLANN Lambda: {args.rolann_lamb} with dropout {args.dropout_rate} {'with reset after epoch' if args.reset else ''} {'and sparse mode' if args.sparse else ''}"
+        f"ROLANN Lambda: {args.rolann_lamb} | Dropout Rate: {args.dropout_rate} "
+        f"{'(Reset after each epoch)' if args.reset else ''} "
+        f"{'(Sparse Mode Enabled)' if args.sparse else ''}"
     )
-    print(f"Use WandB: {'Enabled' if args.use_wandb else 'Disabled'}")
+
+    print(f"Number of Tasks: {args.num_tasks}")
+    print(f"Classes per Task: {args.classes_per_task}")
+    print(f"Initial Tasks: {args.initial_tasks}")
+    print(f"Samples per Task: {args.samples_per_task}")
+
+    print(f"Weights & Biases: {'Enabled' if args.use_wandb else 'Disabled'}")
+    print(f"Output Directory: {args.output_dir}")
+
 
     train_dataset, test_dataset = get_datasets(config["dataset"], binary=config["binary"], transform = get_transforms(config["dataset"], config["flatten"]))
     model = build_incremental_model(config)
