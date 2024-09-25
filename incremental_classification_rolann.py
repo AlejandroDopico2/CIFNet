@@ -67,7 +67,7 @@ def plot_overall_accuracy(overall_accuracies, num_classes_per_task, num_classes_
 
 
 def plot_task_accuracies(task_accuracies, num_classes_per_task, num_classes_total):
-    plt.figure(figsize=(10, 5))
+    plt.figure(figsize=(12, 6))
     for task, accuracies in task_accuracies.items():
         plt.plot(
             range(
@@ -90,7 +90,7 @@ def plot_task_accuracies(task_accuracies, num_classes_per_task, num_classes_tota
 num_classes_total = 10
 num_classes_per_task = 2
 num_samples_per_class = 800
-memory_size_per_class = 100
+memory_size_per_class = 0
 buffer_batch_size = 32
 batch_size = 128
 

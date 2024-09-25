@@ -81,7 +81,7 @@ def train(
         test_loss, test_accuracy = test(
             model, test_loader, criterion, epoch, config["num_classes"], device
         )
-        
+
         if config["use_wandb"]:
             wandb.log(
                 {

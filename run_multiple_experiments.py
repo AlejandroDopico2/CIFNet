@@ -5,14 +5,15 @@ import json
 import multiprocessing
 import optuna
 
+
 def run_experiment(trial):
     dataset = "CIFAR100"
-    
+
     # Define hyperparameters to search
     backbone = trial.suggest_categorical("backbone", ["ResNet", "MobileNet", "Custom"])
     batch_size = trial.suggest_int("batch_size", 200, 500, step=150)
-    rolann_lamb = trial.suggest_float("rolann_lamb", 0.01, 1.0, log = True)
-    learning_rate = trial.suggest_float("learning_rate", 0.001, 0.1, log = True)
+    rolann_lamb = trial.suggest_float("rolann_lamb", 0.01, 1.0, log=True)
+    learning_rate = trial.suggest_float("learning_rate", 0.001, 0.1, log=True)
     dropout = trial.suggest_float("dropout_rate", 0.0, 0.5)
 
     # Create a directory for this specific experiment
@@ -22,18 +23,28 @@ def run_experiment(trial):
 
     # Construct the command
     cmd = [
-        "python", "main.py",
-        "--dataset", dataset,
-        "--backbone", backbone,
-        "--batch_size", str(batch_size),
-        "--epochs", str(30),
-        "--rolann_lamb", str(rolann_lamb),
-        "--learning_rate", str(learning_rate),
-        "--dropout_rate", str(dropout),
+        "python",
+        "main.py",
+        "--dataset",
+        dataset,
+        "--backbone",
+        backbone,
+        "--batch_size",
+        str(batch_size),
+        "--epochs",
+        str(30),
+        "--rolann_lamb",
+        str(rolann_lamb),
+        "--learning_rate",
+        str(learning_rate),
+        "--dropout_rate",
+        str(dropout),
         "--pretrained",
         "--sparse",
-        "--output_dir", exp_dir,
-        "--num_instances", str(5000),
+        "--output_dir",
+        exp_dir,
+        "--num_instances",
+        str(5000),
     ]
 
     # Run the experiment
@@ -47,11 +58,11 @@ def run_experiment(trial):
 
     # Extract accuracies
     test_accuracy, train_accuracy = None, None
-    for line in reversed(result.stdout.split('\n')):
+    for line in reversed(result.stdout.split("\n")):
         if "Test Accuracy:" in line:
             test_accuracy = float(line.split(":")[1].strip())
             break
-    for line in reversed(result.stdout.split('\n')):
+    for line in reversed(result.stdout.split("\n")):
         if "Train Accuracy:" in line:
             train_accuracy = float(line.split(":")[1].strip())
             break
@@ -59,8 +70,10 @@ def run_experiment(trial):
     # Return the negative test accuracy (minimization problem)
     return -test_accuracy
 
+
 def objective(trial):
     return run_experiment(trial)
+
 
 def run_bayesian_search(n_trials, n_jobs):
     study = optuna.create_study(direction="maximize")
@@ -73,6 +86,7 @@ def run_bayesian_search(n_trials, n_jobs):
 
     with open(os.path.join(base_dir, "best_hyperparameters.json"), "w") as f:
         json.dump(best_params, f, indent=2)
+
 
 if __name__ == "__main__":
     # Create a base directory for all experiments

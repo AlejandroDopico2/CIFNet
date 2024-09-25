@@ -8,10 +8,10 @@ from torchvision import transforms, datasets
 def get_transforms(dataset: str, flatten: bool) -> transforms.Compose:
 
     if dataset == "MNIST":
-        transform_list = [transforms.ToTensor(),  transforms.Normalize((0.5,), (0.5,))]
+        transform_list = [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]
     elif dataset.startswith("CIFAR"):
         transform_list = [
-            transforms.ToTensor(),
+                transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ]
     else:
@@ -60,39 +60,48 @@ def get_datasets(
 
     return train_dataset, test_dataset
 
-def prepare_data(
-    dataset: Dataset,
-    class_range: int,
-    samples_per_class: int
-) -> Subset:
-    if hasattr(dataset, 'targets'):
+
+def prepare_data(dataset: Dataset, class_range: int, samples_per_task: int) -> Subset:
+    if hasattr(dataset, "targets"):
         targets = dataset.targets
-    elif hasattr(dataset, 'labels'):
+    elif hasattr(dataset, "labels"):
         targets = dataset.labels
     else:
         raise AttributeError("Dataset must have an attribute 'targets' or 'labels'.")
-        
-    class_indices = [
-        torch.where(targets == i)[0] for i in class_range
-    ]
+    
+    samples_per_class = samples_per_task // len(class_range)
+    
+    if isinstance(targets, np.ndarray):
+        targets = torch.from_numpy(targets)
+
+    targets = torch.IntTensor(targets) if not isinstance(targets, torch.Tensor) else targets
+
+    class_indices = [torch.where(targets == i)[0] for i in class_range]
 
     selected_indices = torch.cat(
         [
-            torch.tensor(np.random.choice(indices.numpy(), samples_per_class, replace=False))
+            torch.tensor(
+                np.random.choice(indices.numpy(), samples_per_class, replace=True)
+            )
             for indices in class_indices
         ]
     )
 
     return Subset(dataset, selected_indices)
 
-if __name__ == '__main__':
 
-    train_dataset, test_dataset, num_classes = get_datasets("MNIST", get_transforms("MNIST", False))
+if __name__ == "__main__":
+
+    train_dataset, test_dataset, num_classes = get_datasets(
+        "MNIST", get_transforms("MNIST", False)
+    )
 
     classes_per_task = 2
     for i in range(1, 6):
         task = i
-        class_range = list(range((task - 1) * classes_per_task, task * classes_per_task))
+        class_range = list(
+            range((task - 1) * classes_per_task, task * classes_per_task)
+        )
 
         dataset = prepare_data(train_dataset, class_range, samples_per_class=100)
 

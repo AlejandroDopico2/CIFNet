@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -11,6 +11,7 @@ def evaluate(
     epoch: int,
     num_classes: int,
     device: str,
+    task: Optional[int] = None,
 ) -> Tuple[float, float]:
 
     model.eval()
@@ -42,7 +43,10 @@ def evaluate(
         test_acc = (total_correct / total_samples).item()
 
     print(
-        f"Epoch {epoch + 1}, Test Loss: {test_loss}, Test Accuracy: {100 * test_acc} ({total_correct} of {total_samples})"
+        (f"\tTask: {task}\t" if task else "") + f"Epoch {epoch + 1}, "
+        f"Test Loss: {test_loss:.4f}, "
+        f"Test Accuracy: {100 * test_acc:.2f}% "
+        f"({total_correct} of {total_samples})"
     )
 
     return test_loss, test_acc

@@ -43,7 +43,12 @@ def parse_args() -> argparse.Namespace:
     model_group.add_argument(
         "--backbone",
         type=str,
-        choices=["ResNet", "MobileNet", "DenseNet", "Custom",],
+        choices=[
+            "ResNet",
+            "MobileNet",
+            "DenseNet",
+            "Custom",
+        ],
         required=False,
         help="Backbone model type (e.g., ResNet, MobileNet).",
     )
@@ -82,16 +87,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Reset the ROLANN layer after each epoch.",
     )
-    rolann_group.add_argument(
-        "--sparse",
-        default=False,
-        action="store_true"
-    )
+    rolann_group.add_argument("--sparse", default=False, action="store_true")
     rolann_group.add_argument(
         "--dropout_rate",
         default=0.25,
         type=float,
-        help="Dropout rate for the ROLANN layer."
+        help="Dropout rate for the ROLANN layer.",
     )
 
     # Training process arguments
@@ -148,11 +149,9 @@ def main() -> None:
     plot_filename = f"{args.dataset}_{args.backbone}_plot.png"
     plot_path = os.path.join(args.output_dir, plot_filename)
 
-    plot_results(results, save_path = plot_path)
+    plot_results(results, save_path=plot_path)
     print(f"Plot saved to: {plot_path}")
-
 
 
 if __name__ == "__main__":
     main()
-

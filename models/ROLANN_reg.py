@@ -52,7 +52,7 @@ class ROLANNDropout(nn.Module):
 
     def update_weights(self, X: Tensor, d: Tensor) -> Tensor:
         results = [self._update_weights(X, d[:, i]) for i in range(self.num_classes)]
-    
+
         ml, ul, sl = zip(*results)
 
         self.m = torch.stack(ml, dim=0)

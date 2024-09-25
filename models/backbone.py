@@ -16,6 +16,7 @@ class Backbone(ABC, nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         return self.model(x)
 
+
 class ResNetBackbone(Backbone):
     def __init__(self, pretrained: bool = True):
         super(ResNetBackbone, self).__init__()
@@ -53,6 +54,7 @@ class MobileNetBackbone(Backbone):
             bias=self.model.features[0][0].bias,
         )
 
+
 class DenseNetBackbone(Backbone):
     def __init__(self, pretrained: bool = True):
         super(DenseNetBackbone, self).__init__()
@@ -62,7 +64,7 @@ class DenseNetBackbone(Backbone):
             else models.densenet121()
         )
         self.model.classifier = nn.Identity()  # Remove the final classifier layer
-    
+
     def set_input_channels(self, channels: int):
         self.model.features[0] = nn.Conv2d(
             channels,
@@ -72,6 +74,7 @@ class DenseNetBackbone(Backbone):
             padding=self.model.features[0].padding,
             bias=self.model.features[0].bias,
         )
+
 
 class CustomBackbone(Backbone):
     def __init__(self, pretrained):
@@ -85,11 +88,11 @@ class CustomBackbone(Backbone):
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.AdaptiveAvgPool2d((1, 1))
+            nn.AdaptiveAvgPool2d((1, 1)),
         )
 
     def set_input_channels(self, channels: int):
-        self.model[0]= nn.Conv2d(
+        self.model[0] = nn.Conv2d(
             channels,
             self.model[0].out_channels,
             kernel_size=self.model[0].kernel_size,

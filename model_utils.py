@@ -2,7 +2,7 @@ import torch.nn as nn
 import importlib
 from typing import Any, Dict, Type
 from models.RolanNET import RolanNET
-from models.backbone import Backbone
+from models.Backbone import Backbone
 
 
 def get_backbone_class(module_name: str, class_name: str) -> Type[Backbone]:
@@ -19,7 +19,7 @@ def build_model(config: Dict[str, Any]) -> nn.Module:
 
     if config["backbone"]:
         backbone = get_backbone_class(
-            "models.backbone", config["backbone"] + "Backbone"
+            "models.Backbone", config["backbone"] + "Backbone"
         )
     else:
         backbone = None
@@ -37,13 +37,14 @@ def build_model(config: Dict[str, Any]) -> nn.Module:
     ).to(config["device"])
 
     return model
-    
+
+
 def build_incremental_model(config: Dict[str, Any]) -> nn.Module:
     in_channels = 1 if config["dataset"] == "MNIST" else 3
 
     if config["backbone"]:
         backbone = get_backbone_class(
-            "models.backbone", config["backbone"] + "Backbone"
+            "models.Backbone", config["backbone"] + "Backbone"
         )
     else:
         backbone = None
@@ -58,7 +59,8 @@ def build_incremental_model(config: Dict[str, Any]) -> nn.Module:
         sparse=config["sparse"],
         dropout_rate=config["dropout_rate"],
         device=config["device"],
-        incremental=True
+        incremental=True,
+        freeze=config["freeze"]
     ).to(config["device"])
 
     return model

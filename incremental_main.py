@@ -1,11 +1,13 @@
 import argparse
 import os
 from data_utils import get_transforms
+from experience_replay_incremental_train import trainER
 from incremental_train import train
 from incremental_data_utils import get_datasets
 from model_utils import build_incremental_model
-from plotting import plot_results
+from plotting import plot_overall_accuracy, plot_results, plot_task_accuracies
 from config import get_config
+import json
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     dataset_group.add_argument(
         "--batch_size",
         type=int,
-        default=32,
+        default=64,
         help="Batch size for training and testing datasets.",
     )
     dataset_group.add_argument(
@@ -44,7 +46,12 @@ def parse_args() -> argparse.Namespace:
     model_group.add_argument(
         "--backbone",
         type=str,
-        choices=["ResNet", "MobileNet", "DenseNet", "Custom",],
+        choices=[
+            "ResNet",
+            "MobileNet",
+            "DenseNet",
+            "Custom",
+        ],
         required=False,
         help="Backbone model type (e.g., ResNet, MobileNet).",
     )
@@ -89,16 +96,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Reset the ROLANN layer after each epoch.",
     )
-    rolann_group.add_argument(
-        "--sparse",
-        default=False,
-        action="store_true"
-    )
+    rolann_group.add_argument("--sparse", default=False, action="store_true")
     rolann_group.add_argument(
         "--dropout_rate",
         default=0.25,
         type=float,
-        help="Dropout rate for the ROLANN layer."
+        help="Dropout rate for the ROLANN layer.",
     )
 
     # Incremental learning specific arguments
@@ -129,6 +132,12 @@ def parse_args() -> argparse.Namespace:
         default=100,
         help="Number samples per task.",
     )
+    incremental_group.add_argument(
+        "--buffer_size",
+        type=int,
+        default=100,
+        help="Number of instances of each task to save in replay buffer.",
+    )
 
     # Training process arguments
     training_group = parser.add_argument_group(
@@ -153,7 +162,7 @@ def parse_args() -> argparse.Namespace:
         default=".",
         help="Directory to save output files and plots.",
     )
-      
+
     return parser.parse_args()
 
 
@@ -163,7 +172,9 @@ def main() -> None:
 
     # Print parsed arguments
     print(f"Dataset: {args.dataset}")
-    print(f"Backbone: {args.backbone} ({'pretrained' if args.pretrained else 'not pretrained'}) {'(Frozen)' if args.freeze else ''}")
+    print(
+        f"Backbone: {args.backbone} ({'pretrained' if args.pretrained else 'not pretrained'}) {'(Frozen)' if args.freeze else ''}"
+    )
     print(f"Binary Classification: {'Enabled' if args.binary else 'Disabled'}")
     print(f"Batch Size: {args.batch_size}")
     print(f"Number of Instances: {args.num_instances}")
@@ -179,26 +190,62 @@ def main() -> None:
     print(f"Number of Tasks: {args.num_tasks}")
     print(f"Classes per Task: {args.classes_per_task}")
     print(f"Initial Tasks: {args.initial_tasks}")
-    print(f"Samples per Task: {args.samples_per_task}")
+    print(f"Samples per Task: {config['samples_per_task']}")
 
     print(f"Weights & Biases: {'Enabled' if args.use_wandb else 'Disabled'}")
     print(f"Output Directory: {args.output_dir}")
 
-
-    train_dataset, test_dataset = get_datasets(config["dataset"], binary=config["binary"], transform = get_transforms(config["dataset"], config["flatten"]))
+    train_dataset, test_dataset = get_datasets(
+        config["dataset"],
+        binary=config["binary"],
+        transform=get_transforms(config["dataset"], config["flatten"]),
+    )
     model = build_incremental_model(config)
 
-    results = train(model, train_dataset, test_dataset, config)
+    filename = f"{args.dataset}_{args.backbone}"
+    plot_path = os.path.join(args.output_dir, filename + "_plot.png")
+    log_path = os.path.join(args.output_dir, "results.json")
+
+    use_experience_replay = True
+
+    if use_experience_replay:
+        results, task_accuracies = trainER(model, train_dataset, test_dataset, config)
+        desired_hyperparams = [
+            "dataset",
+            "backbone",
+            "batch_size",
+            "epochs",
+            "rolann_lamb",
+            "dropout_rate",
+            "pretrained",
+            "output_dir",
+            "samples_per_task",
+            "freeze",
+            "num_tasks",
+            "classes_per_task",
+            "buffer_size"
+        ]
+
+        hyperparameters_to_save = {key: config[key] for key in desired_hyperparams if key in config}
+
+        output_data = {
+            "task_accuracies": task_accuracies,
+            "hyperparameters": hyperparameters_to_save
+        }
+
+        with open(log_path, "w") as f:
+            json.dump(output_data, f, indent=4)
+    else:
+        results = train(model, train_dataset, test_dataset, config)
     print(f"Train Accuracy: {results['train_accuracy'][-1]:.4f}")
     print(f"Test Accuracy: {results['test_accuracy'][-1]:.4f}")
 
-    plot_filename = f"{args.dataset}_{args.backbone}_plot.png"
-    plot_path = os.path.join(args.output_dir, plot_filename)
+    # Plotting
+    # plot_overall_accuracy(results, config["num_classes_per_task"], config["num_classes_per_task"] * config["num_tasks"])
+    plot_task_accuracies(task_accuracies, config["num_tasks"])
 
-    plot_results(results, save_path = plot_path)
     print(f"Plot saved to: {plot_path}")
 
 
 if __name__ == "__main__":
     main()
-

@@ -57,9 +57,14 @@ class ROLANN(nn.Module):
         ul_list = []
         sl_list = []
 
-        update_funcs = [lambda x=X, di=d[:, i]: self._update_weights(x, di) for i in range(self.num_classes)]
+        update_funcs = [
+            lambda x=X, di=d[:, i]: self._update_weights(x, di)
+            for i in range(self.num_classes)
+        ]
 
-        results = parallel.parallel_apply(update_funcs, [tuple() for _ in range(self.num_classes)])
+        results = parallel.parallel_apply(
+            update_funcs, [tuple() for _ in range(self.num_classes)]
+        )
 
         ml_list, ul_list, sl_list = zip(*results)
 
@@ -121,11 +126,15 @@ class ROLANN(nn.Module):
         xp = torch.cat((ones, X), dim=0)
 
         # Stack weights for parallel computation
-        stacked_w = torch.stack(self.w)  # Shape: (n_outputs, dim_1, dim_2, ..., input_dim + 1)
-        
+        stacked_w = torch.stack(
+            self.w
+        )  # Shape: (n_outputs, dim_1, dim_2, ..., input_dim + 1)
+
         # Apply dropout and expand xp for matrix multiplication with each weight tensor
         xp = self.dropout(xp)  # Dropout can remain outside the loop, applied once
-        xp_expanded = xp.unsqueeze(0).expand(n_outputs, *xp.size())  # Shape: (n_outputs, input_dim + 1, n)
+        xp_expanded = xp.unsqueeze(0).expand(
+            n_outputs, *xp.size()
+        )  # Shape: (n_outputs, input_dim + 1, n)
 
         transposed_w = stacked_w.permute(0, 2, 1)  # Transpose the last two dimensions
 
@@ -133,7 +142,6 @@ class ROLANN(nn.Module):
         y_hat = self.f(torch.matmul(transposed_w, xp_expanded))  # Shape: (n_outputs, n)
 
         return torch.transpose(y_hat.squeeze(), 0, 1)
-
 
     def get_params(self):
         return self.m, self.us
@@ -149,7 +157,7 @@ class ROLANN(nn.Module):
             self.sg = self.s
         else:
             device = self.m.device
-        
+
             M = self.mg
             m_k = self.m
             u_k = self.u
@@ -163,9 +171,11 @@ class ROLANN(nn.Module):
 
             # Efficient concatenation
             concat_dim = us_k.shape[2] + US.shape[2]
-            concatenated = torch.zeros((self.num_classes, US.shape[1], concat_dim), device=device)
-            concatenated[:, :, :us_k.shape[2]] = us_k
-            concatenated[:, :, us_k.shape[2]:] = US
+            concatenated = torch.zeros(
+                (self.num_classes, US.shape[1], concat_dim), device=device
+            )
+            concatenated[:, :, : us_k.shape[2]] = us_k
+            concatenated[:, :, us_k.shape[2] :] = US
 
             # Perform SVD and update
             U, S, _ = torch.linalg.svd(concatenated, full_matrices=False)
@@ -175,37 +185,45 @@ class ROLANN(nn.Module):
             self.sg = S
 
     # @torch.jit.script
-    def _calculate_weights_sparse(self, M: torch.Tensor, U: torch.Tensor, S: torch.Tensor, lamb: float) -> torch.Tensor:
+    def _calculate_weights_sparse(
+        self, M: torch.Tensor, U: torch.Tensor, S: torch.Tensor, lamb: float
+    ) -> torch.Tensor:
         I_ones = torch.ones_like(S)
         device = S.device
         S_sparse = torch.sparse_csr_tensor(
             torch.arange(S.size(0) + 1, device=device),
             torch.arange(S.size(0), device=device),
             S,
-            size=(S.size(0), S.size(0))
+            size=(S.size(0), S.size(0)),
         )
         I_sparse = torch.sparse_csr_tensor(
             torch.arange(S.size(0) + 1, device=device),
             torch.arange(S.size(0), device=device),
             I_ones,
-            size=(S.size(0), S.size(0))
+            size=(S.size(0), S.size(0)),
         )
-        
+
         aux = S_sparse.to_dense().pow(2) + lamb * I_sparse.to_dense()
-        return torch.chain_matmul(U, torch.linalg.pinv(aux), U.T, torch.unsqueeze(M, dim = 1))
+        return torch.chain_matmul(
+            U, torch.linalg.pinv(aux), U.T, torch.unsqueeze(M, dim=1)
+        )
 
     # @torch.jit.script
-    def _calculate_weights_dense(self, M: torch.Tensor, U: torch.Tensor, S: torch.Tensor, lamb: float) -> torch.Tensor:
+    def _calculate_weights_dense(
+        self, M: torch.Tensor, U: torch.Tensor, S: torch.Tensor, lamb: float
+    ) -> torch.Tensor:
         diag_elements = 1 / (S.pow(2) + lamb)
-        return torch.chain_matmul(U, torch.diag(diag_elements), U.T, torch.unsqueeze(M, dim = 1))
+        return torch.chain_matmul(
+            U, torch.diag(diag_elements), U.T, torch.unsqueeze(M, dim=1)
+        )
 
     def _calculate_weights(self) -> None:
         if self.mg is None or self.ug is None or self.sg is None:
             self.w = None
             return
-        
+
         self.w = []
-        
+
         for c in range(self.num_classes):
             M, U, S = self.mg[c], self.ug[c], self.sg[c]
 
@@ -215,7 +233,6 @@ class ROLANN(nn.Module):
                 w = self._calculate_weights_dense(M, U, S, self.lamb)
 
             self.w.append(w)
-
 
     def aggregate_update(self, X: Tensor, d: Tensor):
         self.update_weights(X, d)  # Se calculan las nuevas M y US

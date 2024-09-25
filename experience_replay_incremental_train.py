@@ -9,7 +9,7 @@ from models.MemoryReplayBuffer import MemoryReplayBuffer
 from test import evaluate
 
 
-def train(
+def trainER(
     model: nn.Module,
     train_dataset: Subset,
     test_dataset: Subset,
@@ -20,9 +20,13 @@ def train(
     criterion = nn.CrossEntropyLoss()
     optimizer = (
         optim.Adam(model.parameters(), lr=config["learning_rate"], weight_decay=1e-5)
-        if model.backbone or not config["freeze"]
+        if model.backbone and not config["freeze"]
         else None
     )
+
+    # buffer_size = 100
+    buffer_batch_size = 64
+    replayBuffer = MemoryReplayBuffer(config["buffer_size"])
 
     results: Dict[str, List[float]] = {
         "train_loss": [],
@@ -47,13 +51,15 @@ def train(
             f"\nTraining on classes {task*classes_per_task} to {(task+1)*classes_per_task - 1}"
         )
 
+        current_num_classes = (task + 1) * classes_per_task
+
         model.rolann.add_num_classes(classes_per_task)
 
         # Prepare data for current task
         train_subset = prepare_data(
             train_dataset,
             class_range=range(task * classes_per_task, (task + 1) * classes_per_task),
-            samples_per_class=config["samples_per_class"],
+            samples_per_task=config["samples_per_task"],
         )
 
         train_loader = DataLoader(
@@ -80,12 +86,27 @@ def train(
                 inputs, labels = inputs.to(device), labels.to(device)
 
                 labels = torch.nn.functional.one_hot(
-                    labels, num_classes=(task + 1) * classes_per_task
+                    labels, num_classes=current_num_classes
                 )
 
-                labels = process_labels(labels)
+                x_memory, y_memory = replayBuffer.get_memory_samples(
+                    batch_size=buffer_batch_size, num_classes=current_num_classes
+                )
 
-                model.update_rolann(inputs, labels)
+                x_combined = (
+                    torch.cat([x_memory, inputs], dim=0)
+                    if x_memory.size(0) > 0
+                    else inputs
+                )
+                y_combined = (
+                    torch.cat([y_memory, labels], dim=0)
+                    if y_memory.size(0) > 0
+                    else labels
+                )
+
+                y_combined = process_labels(y_combined)
+
+                model.update_rolann(x_combined, y_combined)
                 outputs = model(inputs)
                 loss = criterion(outputs, torch.argmax(labels, dim=1))
 
@@ -102,6 +123,9 @@ def train(
                 running_loss += loss.item()
                 batch_count += 1
 
+                replayBuffer.add_samples(inputs, labels)
+            
+
             epoch_loss = running_loss / batch_count
             epoch_acc = (total_correct / total_samples).item()
 
@@ -116,7 +140,7 @@ def train(
                     class_range=range(
                         eval_task * classes_per_task, (eval_task + 1) * classes_per_task
                     ),
-                    samples_per_class=config["samples_per_class"],
+                    samples_per_task=config["samples_per_task"],
                 )
 
                 test_loader = DataLoader(
@@ -128,7 +152,7 @@ def train(
                     test_loader,
                     criterion,
                     epoch,
-                    num_classes=(task + 1) * classes_per_task,
+                    num_classes=current_num_classes,
                     device=device,
                     task=eval_task + 1,
                 )
@@ -151,14 +175,12 @@ def train(
                     results["test_loss"].append(test_loss)
                     results["test_accuracy"].append(test_accuracy)
 
-    # Add task accuracies to results
-    for task, accuracies in task_accuracies.items():
-        results[f"task_{task+1}_accuracy"] = accuracies
+    print(f"\nMemory buffer distribution: {replayBuffer.get_class_distribution()}")
 
     if config["use_wandb"]:
         wandb.finish()
 
-    return results
+    return results, task_accuracies
 
 
 def process_labels(labels: torch.Tensor) -> torch.Tensor:

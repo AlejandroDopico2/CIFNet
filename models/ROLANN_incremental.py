@@ -25,6 +25,7 @@ class ROLANN_Incremental(nn.Module):
         super(ROLANN_Incremental, self).__init__()
 
         self.num_classes = num_classes
+        self.old_num_classes = 0
         self.lamb = lamb  # Regularization hyperparameter
 
         if activation == "logs":  # Logistic activation functions
@@ -54,6 +55,7 @@ class ROLANN_Incremental(nn.Module):
         self.dropout = nn.Dropout(dropout_rate)
 
     def add_num_classes(self, num_classes):
+        self.old_num_classes = self.num_classes
         self.num_classes += num_classes
 
     def update_weights(self, X: Tensor, d: Tensor) -> Tensor:
@@ -130,12 +132,6 @@ class ROLANN_Incremental(nn.Module):
 
         return torch.transpose(y_hat, 0, 1)
 
-    def get_params(self):
-        return self.m, self.us
-
-    def set_params(self, w):
-        self.w = w
-
     def _aggregate_parcial(self) -> None:
         for c in range(self.num_classes):
             if c >= len(self.mg):
@@ -204,8 +200,8 @@ class ROLANN_Incremental(nn.Module):
                 diag_matrix = torch.diag(diag_elements)
                 # Optimal weights: the order of the matrix and vector multiplications has been done to optimize the speed
                 w = torch.matmul(U, torch.matmul(diag_matrix, torch.matmul(U.T, M)))
-            
-            if c>= len(self.w):
+
+            if c >= len(self.w):
                 # Append optimal weights
                 self.w.append(w)
             else:
