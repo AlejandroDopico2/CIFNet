@@ -20,7 +20,7 @@ class RolanNET(nn.Module):
         device: str = "cuda",
         dropout_rate: float = 0.0,
         optim: bool = False,
-        freeze: bool = False,
+        freeze_mode: str = "all",
         incremental: bool = False,
     ) -> None:
         super(RolanNET, self).__init__()
@@ -30,7 +30,7 @@ class RolanNET(nn.Module):
         if backbone is not None:
             self.backbone = backbone(pretrained).to(self.device)
             self.backbone.set_input_channels(in_channels)
-            self.freeze_backbone(freeze)
+            self.freeze_backbone(freeze_mode)
         else:
             self.backbone = None
 
@@ -68,9 +68,29 @@ class RolanNET(nn.Module):
                 dropout_rate=dropout_rate,
             ).to(self.device)
 
-    def freeze_backbone(self, freeze: bool = False) -> None:
-        for param in self.backbone.parameters():
-            param.requires_grad = not freeze
+    def freeze_backbone(self, freeze_mode: str) -> None:
+        if freeze_mode == "none":
+            # No freezing
+            for param in self.backbone.parameters():
+                param.requires_grad = True
+        elif freeze_mode == "all":
+            # Freeze all layers
+            for param in self.backbone.parameters():
+                param.requires_grad = False
+        elif freeze_mode == "partial":
+            # Freeze all layers except the last few
+            total_layers = len(list(self.backbone.children()))
+            for i, child in enumerate(self.backbone.children()):
+                if i < total_layers - 2:
+                    for param in child.parameters():
+                        param.requires_grad = False
+                else:
+                    for param in child.parameters():
+                        param.requires_grad = True
+        else:
+            raise ValueError(
+                f"Invalid freeze_mode: {freeze_mode}. Choose 'none', 'all', or 'partial'."
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.backbone:

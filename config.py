@@ -29,7 +29,7 @@ def get_config(args: argparse.Namespace) -> Dict[str, Any]:
         "initial_tasks": args.initial_tasks,
         "num_tasks": args.num_tasks,
         "classes_per_task": args.classes_per_task,
-        "freeze": args.freeze,
+        "freeze_mode": args.freeze_mode,
         "buffer_size": args.buffer_size,
     }
 

@@ -1,19 +1,32 @@
 import argparse
 import os
 from pathlib import Path
+from typing import Dict, Union
+import pandas as pd
+import json
+from loguru import logger
+
 from data_utils import get_transforms
 from experience_replay_incremental_train import trainER
 from incremental_train import train
 from incremental_data_utils import get_datasets
 from model_utils import build_incremental_model
-from plotting import plot_overall_accuracy, plot_results, plot_task_accuracies
+from plotting import plot_task_accuracies
 from config import get_config
-import json
+from utils import calculate_cl_metrics
+
+# Set up loguru logger
+logger.remove()
+logger.add(
+    lambda msg: print(msg, end=""),
+    colorize=True,
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train a incremental CV model with a specified backbone and parameters."
+        description="Train an incremental CV model with a specified backbone and parameters."
     )
 
     # Dataset related arguments
@@ -33,12 +46,6 @@ def parse_args() -> argparse.Namespace:
         default=64,
         help="Batch size for training and testing datasets.",
     )
-    dataset_group.add_argument(
-        "--num_instances",
-        type=int,
-        default=5000,
-        help="Number of instances to use from the dataset (default: 5000)",
-    )
 
     # Model and backbone related arguments
     model_group = parser.add_argument_group(
@@ -47,12 +54,7 @@ def parse_args() -> argparse.Namespace:
     model_group.add_argument(
         "--backbone",
         type=str,
-        choices=[
-            "ResNet",
-            "MobileNet",
-            "DenseNet",
-            "Custom",
-        ],
+        choices=["ResNet", "MobileNet", "DenseNet", "Custom"],
         required=False,
         help="Backbone model type (e.g., ResNet, MobileNet).",
     )
@@ -75,10 +77,11 @@ def parse_args() -> argparse.Namespace:
         help="Learning rate term for the backbone model.",
     )
     model_group.add_argument(
-        "--freeze",
-        default=False,
-        action="store_true",
-        help="Freeze the backbone model during training.",
+        "--freeze_mode",
+        type=str,
+        default="all",
+        choices=["none", "all", "partial"],
+        help="Freezing mode for the backbone: none, all, or partial",
     )
 
     # ROLANN specific arguments
@@ -143,7 +146,7 @@ def parse_args() -> argparse.Namespace:
         "--use_er",
         default=False,
         action="store_true",
-        help="Enable using the Experience Replay Buffer for avoid CF.",
+        help="Enable using the Experience Replay Buffer for avoiding CF.",
     )
 
     # Training process arguments
@@ -173,35 +176,34 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
+def main(args=None) -> Dict[str, Union[float, str]]:
+    if args is None:
+        args = parse_args()
+
     config = get_config(args)
 
-    # Print parsed arguments
-    print(f"Dataset: {args.dataset}")
-    print(
-        f"Backbone: {args.backbone} ({'pretrained' if args.pretrained else 'not pretrained'}) {'(Frozen)' if args.freeze else ''}"
+    # Logging parsed arguments
+    logger.info(f"Dataset: {args.dataset}")
+    logger.info(
+        f"Backbone: {args.backbone} ({'pretrained' if args.pretrained else 'not pretrained'}) (Freeze mode: {args.freeze_mode})"
     )
-    print(f"Binary Classification: {'Enabled' if args.binary else 'Disabled'}")
-    print(f"Batch Size: {args.batch_size}")
-    print(f"Number of Instances: {args.num_instances}")
-    print(f"Epochs: {args.epochs}")
-    print(f"Learning Rate: {args.learning_rate}")
-
-    print(
+    logger.info(f"Binary Classification: {'Enabled' if args.binary else 'Disabled'}")
+    logger.info(f"Batch Size: {args.batch_size}")
+    logger.info(f"Number of Instances: {args.num_instances}")
+    logger.info(f"Epochs: {args.epochs}")
+    logger.info(f"Learning Rate: {args.learning_rate}")
+    logger.info(
         f"ROLANN Lambda: {args.rolann_lamb} | Dropout Rate: {args.dropout_rate} "
         f"{'(Reset after each epoch)' if args.reset else ''} "
         f"{'(Sparse Mode Enabled)' if args.sparse else ''}"
     )
-
-    print(f"Number of Tasks: {args.num_tasks}")
-    print(f"Classes per Task: {args.classes_per_task}")
-    print(f"Initial Tasks: {args.initial_tasks}")
-    print(f"Using Experience Replay: {args.use_er}")
-    print(f"Samples per Task: {config['samples_per_task']}")
-
-    print(f"Weights & Biases: {'Enabled' if args.use_wandb else 'Disabled'}")
-    print(f"Output Directory: {args.output_dir}")
+    logger.info(f"Number of Tasks: {args.num_tasks}")
+    logger.info(f"Classes per Task: {args.classes_per_task}")
+    logger.info(f"Initial Tasks: {args.initial_tasks}")
+    logger.info(f"Using Experience Replay: {args.use_er}")
+    logger.info(f"Samples per Task: {config['samples_per_task']}")
+    logger.info(f"Weights & Biases: {'Enabled' if args.use_wandb else 'Disabled'}")
+    logger.info(f"Output Directory: {args.output_dir}")
 
     train_dataset, test_dataset = get_datasets(
         config["dataset"],
@@ -216,12 +218,25 @@ def main() -> None:
     plot_path = os.path.join(args.output_dir, filename + "_plot.png")
     log_path = os.path.join(args.output_dir, "results.json")
 
-    if args.use_er:
-        results, task_accuracies = trainER(model, train_dataset, test_dataset, config)
-    else:
-        results, task_accuracies = train(model, train_dataset, test_dataset, config)
+    try:
+        if args.use_er:
+            results, task_accuracies = trainER(
+                model, train_dataset, test_dataset, config
+            )
+        else:
+            results, task_accuracies = train(model, train_dataset, test_dataset, config)
 
-    desired_hyperparams = [
+    except Exception as e:
+        logger.error(f"Training failed: {e}")
+        return {}
+
+    cl_metrics = calculate_cl_metrics(task_accuracies)
+
+    hyperparameters_to_save = {
+        key: config[key]
+        for key in config
+        if key
+        in [
             "dataset",
             "backbone",
             "batch_size",
@@ -231,30 +246,45 @@ def main() -> None:
             "pretrained",
             "output_dir",
             "samples_per_task",
-            "freeze",
+            "freeze_mode",
             "num_tasks",
             "classes_per_task",
-            "buffer_size"
+            "buffer_size",
         ]
-
-    hyperparameters_to_save = {key: config[key] for key in desired_hyperparams if key in config}
-
-    output_data = {
-        "task_accuracies": task_accuracies,
-        "hyperparameters": hyperparameters_to_save
     }
 
-    with open(log_path, "w") as f:
-        json.dump(output_data, f, indent=4)
+    log_data = {
+        "avg_forgetting": cl_metrics["avg_forgetting"],
+        "avg_retained_accuracy": cl_metrics["avg_retained"],
+        "avg_final_accuracy": cl_metrics["avg_final_accuracy"],
+        **hyperparameters_to_save,
+    }
 
-    print(f"Train Accuracy: {results['train_accuracy'][-1]:.4f}")
-    print(f"Test Accuracy: {results['test_accuracy'][-1]:.4f}")
+    csv_path = os.path.join(".", "results_log.csv")
+    df = pd.DataFrame.from_dict([log_data])
 
-    # Plotting
-    # plot_overall_accuracy(results, config["num_classes_per_task"], config["num_classes_per_task"] * config["num_tasks"])
+    if os.path.exists(csv_path):
+        df.to_csv(csv_path, mode="a", header=False, index=False)
+    else:
+        df.to_csv(csv_path, index=False)
+
+    json_path = os.path.join(
+        args.output_dir, f"{args.dataset}_{args.backbone}_results.json"
+    )
+
+    with open(json_path, "w") as f:
+        json.dump(log_data, f, indent=4)
+
+    logger.info(f"Average Forgetting: {cl_metrics['avg_forgetting']:.4f}")
+    logger.info(f"Average Retained Accuracy: {cl_metrics['avg_retained']:.4f}")
+    logger.info(f"Results appended to: {csv_path}")
+    logger.info(f"Detailed results saved to: {json_path}")
+
+    # Plotting task accuracies
     plot_task_accuracies(task_accuracies, config["num_tasks"], save_path=plot_path)
+    logger.info(f"Plot saved to: {plot_path}")
 
-    print(f"Plot saved to: {plot_path}")
+    return log_data
 
 
 if __name__ == "__main__":

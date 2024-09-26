@@ -20,7 +20,7 @@ def train(
     criterion = nn.CrossEntropyLoss()
     optimizer = (
         optim.Adam(model.parameters(), lr=config["learning_rate"], weight_decay=1e-5)
-        if model.backbone and not config["freeze"]
+        if model.backbone and not config["freeze_mode"] == "all"
         else None
     )
 
@@ -49,7 +49,7 @@ def train(
 
         model.rolann.add_num_classes(classes_per_task)
 
-        class_range=range(task * classes_per_task, (task + 1) * classes_per_task)
+        class_range = range(task * classes_per_task, (task + 1) * classes_per_task)
 
         # Prepare data for current task
         train_subset = prepare_data(
@@ -62,7 +62,7 @@ def train(
             train_subset, batch_size=config["batch_size"], shuffle=True
         )
 
-        num_epochs = config["epochs"] if not config["freeze"] else 1
+        num_epochs = config["epochs"] if not config["freeze_mode"] == "all" else 1
 
         for epoch in range(num_epochs):
 
@@ -157,7 +157,7 @@ def train(
     for task, accuracies in task_accuracies.items():
         results[f"task_{task+1}_accuracy"] = accuracies
 
-    model.rolann.visualize_weights()
+    # model.rolann.visualize_weights()
 
     if config["use_wandb"]:
         wandb.finish()

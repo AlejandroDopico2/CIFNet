@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+from loguru import logger
+
 
 def evaluate(
     model: nn.Module,
@@ -42,9 +44,8 @@ def evaluate(
         test_loss = running_loss / batch_count
         test_acc = (total_correct / total_samples).item()
 
-    print(
-        (f"\tTask: {task}\t" if task else "") + f"Epoch {epoch + 1}, "
-        f"Test Loss: {test_loss:.4f}, "
+    logger.info(
+        f"Task: {task if task else 'N/A'} | Test Loss: {test_loss:.4f} | "
         f"Test Accuracy: {100 * test_acc:.2f}% "
         f"({total_correct} of {total_samples})"
     )

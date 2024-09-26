@@ -4,6 +4,7 @@
 
 import os
 import struct
+from typing import Dict, List
 
 from matplotlib import pyplot as plt
 import numpy as np
@@ -163,3 +164,41 @@ def plot_accuracies(lambda_values, lambda_accuracies):
 
     # Mostrar la gráfica
     plt.show()
+
+
+def calculate_cl_metrics(task_accuracies: Dict[int, List[float]]):
+    num_tasks = len(task_accuracies.keys())
+
+    forgetting_measures = []
+    retained_accuracies = []
+
+    for i in range(num_tasks - 1):
+        max_accuracy = max(task_accuracies[i])
+        final_accuracy = task_accuracies[i][-1]
+
+        forgetting = max_accuracy - final_accuracy
+
+        initial_accuracy = task_accuracies[i][0]
+
+        if initial_accuracy > 1e-6:
+            retained = final_accuracy / initial_accuracy
+        else:
+            retained = 0
+
+        forgetting_measures.append(forgetting)
+        retained_accuracies.append(retained)
+
+    avg_forgetting = np.mean(forgetting_measures) if forgetting_measures else 0
+    avg_retained = np.mean(retained_accuracies) if retained_accuracies else 0
+
+    avg_final_accuracy = np.mean(
+        [accuracy[-1] for accuracy in task_accuracies.values()]
+    )
+
+    return {
+        "forgetting_measures": forgetting_measures,
+        "retained_accuracies": retained_accuracies,
+        "avg_forgetting": avg_forgetting,
+        "avg_retained": avg_retained,
+        "avg_final_accuracy": avg_final_accuracy,
+    }

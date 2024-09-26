@@ -1,4 +1,5 @@
 from typing import Any, Dict, List
+from loguru import logger
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -16,16 +17,22 @@ def trainER(
     config: Dict[str, Any],
 ) -> Dict[str, List[float]]:
 
+    logger.remove()  # Remove default logger to customize it
+    logger.add(
+        lambda msg: print(msg, end=""),
+        colorize=True,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    )
+
     device = config["device"]
     criterion = nn.CrossEntropyLoss()
     optimizer = (
         optim.Adam(model.parameters(), lr=config["learning_rate"], weight_decay=1e-5)
-        if model.backbone and not config["freeze"]
+        if model.backbone and not config["freeze_mode"] == "all"
         else None
     )
 
-    # buffer_size = 100
-    buffer_batch_size = 64
+    buffer_batch_size = config["buffer_size"]
     replayBuffer = MemoryReplayBuffer(config["buffer_size"])
 
     results: Dict[str, List[float]] = {
@@ -47,13 +54,13 @@ def trainER(
 
     for task in range(config["num_tasks"]):
         classes_per_task = config["classes_per_task"]
-        print(
+        logger.info(
             f"\nTraining on classes {task*classes_per_task} to {(task+1)*classes_per_task - 1}"
         )
 
         current_num_classes = (task + 1) * classes_per_task
 
-        class_range=range(task * classes_per_task, (task + 1) * classes_per_task)
+        class_range = range(task * classes_per_task, (task + 1) * classes_per_task)
 
         model.rolann.add_num_classes(classes_per_task)
 
@@ -68,7 +75,7 @@ def trainER(
             train_subset, batch_size=config["batch_size"], shuffle=True
         )
 
-        num_epochs = config["epochs"] if not config["freeze"] else 1
+        num_epochs = config["epochs"] if not config["freeze_mode"] == "all" else 1
 
         for epoch in range(num_epochs):
 
@@ -126,12 +133,11 @@ def trainER(
                 batch_count += 1
 
                 replayBuffer.add_samples(inputs, labels)
-            
 
             epoch_loss = running_loss / batch_count
             epoch_acc = (total_correct / total_samples).item()
 
-            print(
+            logger.info(
                 f"Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}"
             )
 
@@ -161,7 +167,9 @@ def trainER(
 
                 task_accuracies[eval_task].append(test_accuracy)
 
-                if eval_task == task:  # Only log the current task's performance
+                if (
+                    eval_task == task and epoch == num_epochs - 1
+                ):  # Only log the current task's performance
                     if config["use_wandb"]:
                         wandb.log(
                             {
@@ -177,12 +185,14 @@ def trainER(
                     results["test_loss"].append(test_loss)
                     results["test_accuracy"].append(test_accuracy)
 
-    print(f"\nMemory buffer distribution: {replayBuffer.get_class_distribution()}")
+    logger.info(
+        f"\nMemory buffer distribution: {replayBuffer.get_class_distribution()}"
+    )
 
     if config["use_wandb"]:
         wandb.finish()
 
-    model.rolann.visualize_weights()
+    # model.rolann.visualize_weights()
 
     return results, task_accuracies
 

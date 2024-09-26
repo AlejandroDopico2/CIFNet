@@ -11,7 +11,7 @@ def get_transforms(dataset: str, flatten: bool) -> transforms.Compose:
         transform_list = [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]
     elif dataset.startswith("CIFAR"):
         transform_list = [
-                transforms.ToTensor(),
+            transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
         ]
     else:
@@ -68,13 +68,15 @@ def prepare_data(dataset: Dataset, class_range: int, samples_per_task: int) -> S
         targets = dataset.labels
     else:
         raise AttributeError("Dataset must have an attribute 'targets' or 'labels'.")
-    
+
     samples_per_class = samples_per_task // len(class_range)
-    
+
     if isinstance(targets, np.ndarray):
         targets = torch.from_numpy(targets)
 
-    targets = torch.IntTensor(targets) if not isinstance(targets, torch.Tensor) else targets
+    targets = (
+        torch.IntTensor(targets) if not isinstance(targets, torch.Tensor) else targets
+    )
 
     class_indices = [torch.where(targets == i)[0] for i in class_range]
 

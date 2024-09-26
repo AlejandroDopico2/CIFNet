@@ -60,7 +60,7 @@ def build_incremental_model(config: Dict[str, Any]) -> nn.Module:
         dropout_rate=config["dropout_rate"],
         device=config["device"],
         incremental=True,
-        freeze=config["freeze"]
+        freeze_mode=config["freeze_mode"],
     ).to(config["device"])
 
     return model

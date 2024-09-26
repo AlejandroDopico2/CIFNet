@@ -221,6 +221,8 @@ class ROLANN_Incremental(nn.Module):
     def aggregate_update(self, X: Tensor, d: Tensor):
         unique_classes = torch.argmax(d, dim=1).unique()
 
-        self.update_weights(X, d, unique_classes)   # Se calculan las nuevas M y US
-        self._aggregate_parcial(unique_classes)  # Se agrega nuevas M y US a antiguas (globales)
+        self.update_weights(X, d, unique_classes)  # Se calculan las nuevas M y US
+        self._aggregate_parcial(
+            unique_classes
+        )  # Se agrega nuevas M y US a antiguas (globales)
         self._calculate_weights(unique_classes)  # Se calcula los pesos con las nuevas
