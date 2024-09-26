@@ -53,12 +53,14 @@ def trainER(
 
         current_num_classes = (task + 1) * classes_per_task
 
+        class_range=range(task * classes_per_task, (task + 1) * classes_per_task)
+
         model.rolann.add_num_classes(classes_per_task)
 
         # Prepare data for current task
         train_subset = prepare_data(
             train_dataset,
-            class_range=range(task * classes_per_task, (task + 1) * classes_per_task),
+            class_range=class_range,
             samples_per_task=config["samples_per_task"],
         )
 
@@ -179,6 +181,8 @@ def trainER(
 
     if config["use_wandb"]:
         wandb.finish()
+
+    model.rolann.visualize_weights()
 
     return results, task_accuracies
 

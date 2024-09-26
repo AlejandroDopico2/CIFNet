@@ -20,7 +20,7 @@ def train(
     criterion = nn.CrossEntropyLoss()
     optimizer = (
         optim.Adam(model.parameters(), lr=config["learning_rate"], weight_decay=1e-5)
-        if model.backbone or not config["freeze"]
+        if model.backbone and not config["freeze"]
         else None
     )
 
@@ -49,11 +49,13 @@ def train(
 
         model.rolann.add_num_classes(classes_per_task)
 
+        class_range=range(task * classes_per_task, (task + 1) * classes_per_task)
+
         # Prepare data for current task
         train_subset = prepare_data(
             train_dataset,
-            class_range=range(task * classes_per_task, (task + 1) * classes_per_task),
-            samples_per_class=config["samples_per_class"],
+            class_range=class_range,
+            samples_per_task=config["samples_per_task"],
         )
 
         train_loader = DataLoader(
@@ -116,7 +118,7 @@ def train(
                     class_range=range(
                         eval_task * classes_per_task, (eval_task + 1) * classes_per_task
                     ),
-                    samples_per_class=config["samples_per_class"],
+                    samples_per_task=config["samples_per_task"],
                 )
 
                 test_loader = DataLoader(
@@ -155,10 +157,12 @@ def train(
     for task, accuracies in task_accuracies.items():
         results[f"task_{task+1}_accuracy"] = accuracies
 
+    model.rolann.visualize_weights()
+
     if config["use_wandb"]:
         wandb.finish()
 
-    return results
+    return results, task_accuracies
 
 
 def process_labels(labels: torch.Tensor) -> torch.Tensor:

@@ -12,6 +12,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+from models.WeightTracker import WeightTracker
+
 
 class ROLANN_Incremental(nn.Module):
     def __init__(
@@ -54,12 +56,14 @@ class ROLANN_Incremental(nn.Module):
         self.sparse = sparse
         self.dropout = nn.Dropout(dropout_rate)
 
+        self.weight_tracker = WeightTracker()
+
     def add_num_classes(self, num_classes):
         self.old_num_classes = self.num_classes
         self.num_classes += num_classes
 
-    def update_weights(self, X: Tensor, d: Tensor) -> Tensor:
-        results = [self._update_weights(X, d[:, i]) for i in range(self.num_classes)]
+    def update_weights(self, X: Tensor, d: Tensor, classes: Tensor) -> Tensor:
+        results = [self._update_weights(X, d[:, i]) for i in classes]
 
         ml, ul, sl = zip(*results)
 
@@ -132,13 +136,13 @@ class ROLANN_Incremental(nn.Module):
 
         return torch.transpose(y_hat, 0, 1)
 
-    def _aggregate_parcial(self) -> None:
-        for c in range(self.num_classes):
+    def _aggregate_parcial(self, classes: Tensor) -> None:
+        for i, c in enumerate(classes):
             if c >= len(self.mg):
                 # Initialization using the first element of the list
-                M = self.m[c]
-                U = self.u[c]
-                S = self.s[c]
+                M = self.m[i]
+                U = self.u[i]
+                S = self.s[i]
 
                 self.mg.append(M)
                 self.ug.append(U)
@@ -146,9 +150,9 @@ class ROLANN_Incremental(nn.Module):
 
             else:
                 M = self.mg[c]
-                m_k = self.m[c]
-                s_k = self.s[c]
-                u_k = self.u[c]
+                m_k = self.m[i]
+                s_k = self.s[i]
+                u_k = self.u[i]
 
                 US = torch.matmul(self.ug[c], torch.diag(self.sg[c]))
 
@@ -162,11 +166,11 @@ class ROLANN_Incremental(nn.Module):
                 self.ug[c] = U
                 self.sg[c] = S
 
-    def _calculate_weights(self) -> None:
+    def _calculate_weights(self, classes: Tensor) -> None:
         if not self.mg or not self.ug or not self.sg:
             return None
 
-        for c in range(self.num_classes):
+        for c in classes:
             M = self.mg[c]
             U = self.ug[c]
             S = self.sg[c]
@@ -207,7 +211,16 @@ class ROLANN_Incremental(nn.Module):
             else:
                 self.w[c] = w
 
+            self.weight_tracker.update(c.item(), w)
+
+    # Add a method to visualize weights
+    def visualize_weights(self):
+        self.weight_tracker.plot_weight_statistics()
+        # self.weight_tracker.plot_weight_distribution()
+
     def aggregate_update(self, X: Tensor, d: Tensor):
-        self.update_weights(X, d)  # Se calculan las nuevas M y US
-        self._aggregate_parcial()  # Se agrega nuevas M y US a antiguas (globales)
-        self._calculate_weights()  # Se calcula los pesos con las nuevas
+        unique_classes = torch.argmax(d, dim=1).unique()
+
+        self.update_weights(X, d, unique_classes)   # Se calculan las nuevas M y US
+        self._aggregate_parcial(unique_classes)  # Se agrega nuevas M y US a antiguas (globales)
+        self._calculate_weights(unique_classes)  # Se calcula los pesos con las nuevas

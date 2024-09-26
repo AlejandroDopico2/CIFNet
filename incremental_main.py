@@ -1,5 +1,6 @@
 import argparse
 import os
+from pathlib import Path
 from data_utils import get_transforms
 from experience_replay_incremental_train import trainER
 from incremental_train import train
@@ -138,6 +139,12 @@ def parse_args() -> argparse.Namespace:
         default=100,
         help="Number of instances of each task to save in replay buffer.",
     )
+    incremental_group.add_argument(
+        "--use_er",
+        default=False,
+        action="store_true",
+        help="Enable using the Experience Replay Buffer for avoid CF.",
+    )
 
     # Training process arguments
     training_group = parser.add_argument_group(
@@ -190,6 +197,7 @@ def main() -> None:
     print(f"Number of Tasks: {args.num_tasks}")
     print(f"Classes per Task: {args.classes_per_task}")
     print(f"Initial Tasks: {args.initial_tasks}")
+    print(f"Using Experience Replay: {args.use_er}")
     print(f"Samples per Task: {config['samples_per_task']}")
 
     print(f"Weights & Biases: {'Enabled' if args.use_wandb else 'Disabled'}")
@@ -202,15 +210,18 @@ def main() -> None:
     )
     model = build_incremental_model(config)
 
+    Path(args.output_dir).mkdir(exist_ok=True, parents=True)
+
     filename = f"{args.dataset}_{args.backbone}"
     plot_path = os.path.join(args.output_dir, filename + "_plot.png")
     log_path = os.path.join(args.output_dir, "results.json")
 
-    use_experience_replay = True
-
-    if use_experience_replay:
+    if args.use_er:
         results, task_accuracies = trainER(model, train_dataset, test_dataset, config)
-        desired_hyperparams = [
+    else:
+        results, task_accuracies = train(model, train_dataset, test_dataset, config)
+
+    desired_hyperparams = [
             "dataset",
             "backbone",
             "batch_size",
@@ -226,23 +237,22 @@ def main() -> None:
             "buffer_size"
         ]
 
-        hyperparameters_to_save = {key: config[key] for key in desired_hyperparams if key in config}
+    hyperparameters_to_save = {key: config[key] for key in desired_hyperparams if key in config}
 
-        output_data = {
-            "task_accuracies": task_accuracies,
-            "hyperparameters": hyperparameters_to_save
-        }
+    output_data = {
+        "task_accuracies": task_accuracies,
+        "hyperparameters": hyperparameters_to_save
+    }
 
-        with open(log_path, "w") as f:
-            json.dump(output_data, f, indent=4)
-    else:
-        results = train(model, train_dataset, test_dataset, config)
+    with open(log_path, "w") as f:
+        json.dump(output_data, f, indent=4)
+
     print(f"Train Accuracy: {results['train_accuracy'][-1]:.4f}")
     print(f"Test Accuracy: {results['test_accuracy'][-1]:.4f}")
 
     # Plotting
     # plot_overall_accuracy(results, config["num_classes_per_task"], config["num_classes_per_task"] * config["num_tasks"])
-    plot_task_accuracies(task_accuracies, config["num_tasks"])
+    plot_task_accuracies(task_accuracies, config["num_tasks"], save_path=plot_path)
 
     print(f"Plot saved to: {plot_path}")
 
