@@ -5,7 +5,6 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 from incremental_data_utils import prepare_data
-from models.MemoryReplayBuffer import MemoryReplayBuffer
 from test import evaluate
 
 

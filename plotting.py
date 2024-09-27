@@ -1,6 +1,5 @@
 from typing import Optional
 import matplotlib.pyplot as plt
-import numpy as np
 
 
 def plot_results(results, save_path: Optional[str] = None):

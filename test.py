@@ -14,6 +14,7 @@ def evaluate(
     num_classes: int,
     device: str,
     task: Optional[int] = None,
+    mode: str = "Test",
 ) -> Tuple[float, float]:
 
     model.eval()
@@ -45,8 +46,8 @@ def evaluate(
         test_acc = (total_correct / total_samples).item()
 
     logger.info(
-        f"Task: {task if task else 'N/A'} | Test Loss: {test_loss:.4f} | "
-        f"Test Accuracy: {100 * test_acc:.2f}% "
+        f"Task: {task if task else 'N/A'} | {mode} Loss: {test_loss:.4f} | "
+        f"{mode} Accuracy: {100 * test_acc:.2f}% "
         f"({total_correct} of {total_samples})"
     )
 

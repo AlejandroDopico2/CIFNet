@@ -1,7 +1,7 @@
-from typing import Any, Dict, Tuple
+from typing import Tuple
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset, Subset
+from torch.utils.data import Dataset, Subset
 from torchvision import transforms, datasets
 
 
@@ -83,7 +83,11 @@ def prepare_data(dataset: Dataset, class_range: int, samples_per_task: int) -> S
     selected_indices = torch.cat(
         [
             torch.tensor(
-                np.random.choice(indices.numpy(), samples_per_class, replace=True)
+                np.random.choice(
+                    indices.numpy(),
+                    min(samples_per_class, len(indices.numpy())),
+                    replace=False,
+                )
             )
             for indices in class_indices
         ]

@@ -7,7 +7,7 @@ import json
 from loguru import logger
 
 from data_utils import get_transforms
-from experience_replay_incremental_train import trainER
+from experience_replay_incremental_train import train_ER_AfterEpoch, train_ER_EachStep
 from incremental_train import train
 from incremental_data_utils import get_datasets
 from model_utils import build_incremental_model
@@ -148,6 +148,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable using the Experience Replay Buffer for avoiding CF.",
     )
+    incremental_group.add_argument(
+        "--each_step",
+        default=False,
+        action="store_true",
+        help="Enable using the Experience Replay each training step.",
+    )
 
     # Training process arguments
     training_group = parser.add_argument_group(
@@ -189,7 +195,6 @@ def main(args=None) -> Dict[str, Union[float, str]]:
     )
     logger.info(f"Binary Classification: {'Enabled' if args.binary else 'Disabled'}")
     logger.info(f"Batch Size: {args.batch_size}")
-    logger.info(f"Number of Instances: {args.num_instances}")
     logger.info(f"Epochs: {args.epochs}")
     logger.info(f"Learning Rate: {args.learning_rate}")
     logger.info(
@@ -204,6 +209,7 @@ def main(args=None) -> Dict[str, Union[float, str]]:
     logger.info(f"Samples per Task: {config['samples_per_task']}")
     logger.info(f"Weights & Biases: {'Enabled' if args.use_wandb else 'Disabled'}")
     logger.info(f"Output Directory: {args.output_dir}")
+    logger.info(f"Training on device {config['device']}")
 
     train_dataset, test_dataset = get_datasets(
         config["dataset"],
@@ -218,17 +224,18 @@ def main(args=None) -> Dict[str, Union[float, str]]:
     plot_path = os.path.join(args.output_dir, filename + "_plot.png")
     log_path = os.path.join(args.output_dir, "results.json")
 
-    try:
-        if args.use_er:
-            results, task_accuracies = trainER(
+    if args.use_er:
+
+        if args.each_step:
+            results, task_accuracies = train_ER_EachStep(
                 model, train_dataset, test_dataset, config
             )
         else:
-            results, task_accuracies = train(model, train_dataset, test_dataset, config)
-
-    except Exception as e:
-        logger.error(f"Training failed: {e}")
-        return {}
+            results, task_accuracies = train_ER_AfterEpoch(
+                model, train_dataset, test_dataset, config
+            )
+    else:
+        results, task_accuracies = train(model, train_dataset, test_dataset, config)
 
     cl_metrics = calculate_cl_metrics(task_accuracies)
 
