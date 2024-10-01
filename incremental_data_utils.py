@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Tuple
 import numpy as np
 import torch
 from torch.utils.data import Dataset, Subset
@@ -61,15 +61,13 @@ def get_datasets(
     return train_dataset, test_dataset
 
 
-def prepare_data(dataset: Dataset, class_range: int, samples_per_task: int) -> Subset:
+def prepare_data(dataset: Dataset, class_range: int, samples_per_task: Optional[int] = None) -> Subset:
     if hasattr(dataset, "targets"):
         targets = dataset.targets
     elif hasattr(dataset, "labels"):
         targets = dataset.labels
     else:
         raise AttributeError("Dataset must have an attribute 'targets' or 'labels'.")
-
-    samples_per_class = samples_per_task // len(class_range)
 
     if isinstance(targets, np.ndarray):
         targets = torch.from_numpy(targets)
@@ -78,10 +76,12 @@ def prepare_data(dataset: Dataset, class_range: int, samples_per_task: int) -> S
         torch.IntTensor(targets) if not isinstance(targets, torch.Tensor) else targets
     )
 
-    class_indices = [torch.where(targets == i)[0] for i in class_range]
+    if samples_per_task is None:
+        class_indices = [torch.where(targets == i)[0] for i in class_range]
+    else:
+        samples_per_class = samples_per_task // len(class_range)
 
-    selected_indices = torch.cat(
-        [
+        class_indices = [
             torch.tensor(
                 np.random.choice(
                     indices.numpy(),
@@ -89,9 +89,10 @@ def prepare_data(dataset: Dataset, class_range: int, samples_per_task: int) -> S
                     replace=False,
                 )
             )
-            for indices in class_indices
+            for indices in [torch.where(targets==i)[0] for i in class_range]
         ]
-    )
+
+    selected_indices = torch.cat(class_indices)
 
     return Subset(dataset, selected_indices)
 

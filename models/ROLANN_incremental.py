@@ -23,11 +23,11 @@ class ROLANN_Incremental(nn.Module):
         activation: str = "logs",
         sparse: bool = False,
         dropout_rate: float = 0.0,
+        freeze_output: bool = False
     ):
         super(ROLANN_Incremental, self).__init__()
 
         self.num_classes = num_classes
-        self.old_num_classes = 0
         self.lamb = lamb  # Regularization hyperparameter
 
         if activation == "logs":  # Logistic activation functions
@@ -56,10 +56,9 @@ class ROLANN_Incremental(nn.Module):
         self.sparse = sparse
         self.dropout = nn.Dropout(dropout_rate)
 
-        self.weight_tracker = WeightTracker()
+        self.freeze_output = freeze_output
 
     def add_num_classes(self, num_classes):
-        self.old_num_classes = self.num_classes
         self.num_classes += num_classes
 
     def update_weights(self, X: Tensor, d: Tensor, classes: Tensor) -> Tensor:
@@ -108,12 +107,6 @@ class ROLANN_Incremental(nn.Module):
             M = torch.matmul(xp, torch.matmul(F, torch.matmul(F, f_d)))
 
         return M, U, S
-
-    def reset(self) -> None:
-        self.ug = []
-        self.sg = []
-        self.mg = []
-        self.w = None
 
     def forward(self, X: Tensor) -> Tensor:
         X = X.T
@@ -211,15 +204,8 @@ class ROLANN_Incremental(nn.Module):
             else:
                 self.w[c] = w
 
-            self.weight_tracker.update(c.item(), w)
-
-    # Add a method to visualize weights
-    def visualize_weights(self):
-        self.weight_tracker.plot_weight_statistics()
-        # self.weight_tracker.plot_weight_distribution()
-
     def aggregate_update(self, X: Tensor, d: Tensor):
-        unique_classes = torch.argmax(d, dim=1).unique()
+        unique_classes = torch.argmax(d, dim=1).unique() if self.freeze_output else range(self.num_classes)
 
         self.update_weights(X, d, unique_classes)  # Se calculan las nuevas M y US
         self._aggregate_parcial(

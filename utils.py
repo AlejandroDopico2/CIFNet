@@ -4,13 +4,15 @@
 
 import os
 import struct
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from matplotlib import pyplot as plt
 import numpy as np
 from sklearn.metrics import accuracy_score
 import torch
 from models.RolanNET import RolanNET
+
+from torch.utils.data import Subset, random_split, DataLoader
 
 
 def check_equals(params1, params2):
@@ -202,3 +204,19 @@ def calculate_cl_metrics(task_accuracies: Dict[int, List[float]]):
         "avg_retained": avg_retained,
         "avg_final_accuracy": avg_final_accuracy,
     }
+
+
+
+def split_dataset(
+    train_subset: Subset, config: Dict[str, Any]
+) -> tuple[DataLoader, DataLoader]:
+    train_size = int(0.8 * len(train_subset))
+    val_size = len(train_subset) - train_size
+    train_subset, val_subset = random_split(train_subset, [train_size, val_size])
+
+    train_loader = DataLoader(
+        train_subset, batch_size=config["batch_size"], shuffle=True
+    )
+    val_loader = DataLoader(val_subset, batch_size=config["batch_size"], shuffle=False)
+
+    return train_loader, val_loader

@@ -23,7 +23,7 @@ def get_transforms(dataset: str, flatten: bool) -> transforms.Compose:
 
 
 def get_datasets(
-    dataset: str, transform: transforms.Compose, binary: bool
+    dataset: str, transform: transforms.Compose
 ) -> Tuple[Dataset, Dataset]:
 
     if dataset == "MNIST":
@@ -53,21 +53,13 @@ def get_datasets(
     else:
         raise ValueError("Unsupported dataset")
 
-    if binary:
-        train_indices = (train_dataset.targets == 0) | (train_dataset.targets == 1)
-        train_dataset = Subset(train_dataset, torch.where(train_indices)[0])
-
-        test_indices = (test_dataset.targets == 0) | (test_dataset.targets == 1)
-        test_dataset = Subset(test_dataset, torch.where(test_indices)[0])
-        num_classes = 2
-
     return train_dataset, test_dataset, num_classes
 
 
 def set_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader]:
     transform = get_transforms(config["dataset"], config["flatten"])
     train_dataset, test_dataset, num_classes = get_datasets(
-        config["dataset"], transform, config["binary"]
+        config["dataset"], transform
     )
 
     config["num_classes"] = num_classes

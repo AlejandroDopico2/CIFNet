@@ -8,11 +8,11 @@ from loguru import logger
 
 from data_utils import get_transforms
 from experience_replay_incremental_train import train_ER_AfterEpoch, train_ER_EachStep
-from incremental_train import train
+from incremental_train import incremental_train
 from incremental_data_utils import get_datasets
 from model_utils import build_incremental_model
 from plotting import plot_task_accuracies
-from config import get_config
+from config import get_continual_config
 from utils import calculate_cl_metrics
 
 # Set up loguru logger
@@ -65,12 +65,6 @@ def parse_args() -> argparse.Namespace:
         help="Use a pretrained backbone model.",
     )
     model_group.add_argument(
-        "--binary",
-        default=False,
-        action="store_true",
-        help="Use binary classification. If not set, the model will perform multi-class classification.",
-    )
-    model_group.add_argument(
         "--learning_rate",
         type=float,
         default=0.001,
@@ -94,18 +88,18 @@ def parse_args() -> argparse.Namespace:
         default=0.01,
         help="Regularization term (lambda) for the ROLANN layer.",
     )
-    rolann_group.add_argument(
-        "--reset",
-        default=False,
-        action="store_true",
-        help="Reset the ROLANN layer after each epoch.",
-    )
     rolann_group.add_argument("--sparse", default=False, action="store_true")
     rolann_group.add_argument(
         "--dropout_rate",
         default=0.25,
         type=float,
         help="Dropout rate for the ROLANN layer.",
+    )
+    rolann_group.add_argument(
+        "--freeze_rolann",
+        default=False,
+        action="store_true",
+        help="Freeze the ROLANN outputs layer during training.",
     )
 
     # Incremental learning specific arguments
@@ -133,7 +127,7 @@ def parse_args() -> argparse.Namespace:
     incremental_group.add_argument(
         "--samples_per_task",
         type=int,
-        default=100,
+        default=None,
         help="Number samples per task.",
     )
     incremental_group.add_argument(
@@ -186,34 +180,31 @@ def main(args=None) -> Dict[str, Union[float, str]]:
     if args is None:
         args = parse_args()
 
-    config = get_config(args)
+    config = get_continual_config(args)
 
     # Logging parsed arguments
     logger.info(f"Dataset: {args.dataset}")
     logger.info(
         f"Backbone: {args.backbone} ({'pretrained' if args.pretrained else 'not pretrained'}) (Freeze mode: {args.freeze_mode})"
     )
-    logger.info(f"Binary Classification: {'Enabled' if args.binary else 'Disabled'}")
     logger.info(f"Batch Size: {args.batch_size}")
     logger.info(f"Epochs: {args.epochs}")
     logger.info(f"Learning Rate: {args.learning_rate}")
     logger.info(
-        f"ROLANN Lambda: {args.rolann_lamb} | Dropout Rate: {args.dropout_rate} "
-        f"{'(Reset after each epoch)' if args.reset else ''} "
+        f"ROLANN Lambda: {args.rolann_lamb} {'(freezed)' if args.freeze_rolann else ''} | Dropout Rate: {args.dropout_rate} "
         f"{'(Sparse Mode Enabled)' if args.sparse else ''}"
     )
     logger.info(f"Number of Tasks: {args.num_tasks}")
     logger.info(f"Classes per Task: {args.classes_per_task}")
     logger.info(f"Initial Tasks: {args.initial_tasks}")
-    logger.info(f"Using Experience Replay: {args.use_er}")
-    logger.info(f"Samples per Task: {config['samples_per_task']}")
+    logger.info(f"Using Experience Replay: {args.use_er} {'each step' if args.each_step else 'each epoch.'}")
+    logger.info(f"Samples per Task: {config['samples_per_task'] if config['samples_per_task'] else 'all the dataset.'}")
     logger.info(f"Weights & Biases: {'Enabled' if args.use_wandb else 'Disabled'}")
     logger.info(f"Output Directory: {args.output_dir}")
     logger.info(f"Training on device {config['device']}")
 
     train_dataset, test_dataset = get_datasets(
         config["dataset"],
-        binary=config["binary"],
         transform=get_transforms(config["dataset"], config["flatten"]),
     )
     model = build_incremental_model(config)
@@ -235,7 +226,7 @@ def main(args=None) -> Dict[str, Union[float, str]]:
                 model, train_dataset, test_dataset, config
             )
     else:
-        results, task_accuracies = train(model, train_dataset, test_dataset, config)
+        results, task_accuracies = incremental_train(model, train_dataset, test_dataset, config)
 
     cl_metrics = calculate_cl_metrics(task_accuracies)
 
@@ -257,6 +248,8 @@ def main(args=None) -> Dict[str, Union[float, str]]:
             "num_tasks",
             "classes_per_task",
             "buffer_size",
+            "use_er",
+            "each_step"
         ]
     }
 

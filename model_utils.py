@@ -61,6 +61,7 @@ def build_incremental_model(config: Dict[str, Any]) -> nn.Module:
         device=config["device"],
         incremental=True,
         freeze_mode=config["freeze_mode"],
+        freeze_rolann=config["freeze_rolann"]
     ).to(config["device"])
 
     return model

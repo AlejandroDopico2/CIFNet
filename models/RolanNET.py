@@ -19,9 +19,9 @@ class RolanNET(nn.Module):
         sparse: bool = False,
         device: str = "cuda",
         dropout_rate: float = 0.0,
-        optim: bool = False,
         freeze_mode: str = "all",
         incremental: bool = False,
+        freeze_rolann: bool = False,
     ) -> None:
         super(RolanNET, self).__init__()
 
@@ -34,23 +34,6 @@ class RolanNET(nn.Module):
         else:
             self.backbone = None
 
-        if optim:
-            self.rolann = ROLANN_optim(
-                num_classes,
-                activation=activation,
-                lamb=lamb,
-                sparse=sparse,
-                dropout_rate=dropout_rate,
-            ).to(self.device)
-        else:
-            self.rolann = ROLANN(
-                num_classes,
-                activation=activation,
-                lamb=lamb,
-                sparse=sparse,
-                dropout_rate=dropout_rate,
-            ).to(self.device)
-
         if incremental:
             self.rolann = ROLANN_Incremental(
                 num_classes,
@@ -58,6 +41,7 @@ class RolanNET(nn.Module):
                 lamb=lamb,
                 sparse=sparse,
                 dropout_rate=dropout_rate,
+                freeze_output=freeze_rolann
             ).to(self.device)
         else:
             self.rolann = ROLANN(
@@ -111,6 +95,3 @@ class RolanNET(nn.Module):
         x = x.to(self.device)
 
         self.rolann.aggregate_update(x, labels.to(self.device))
-
-    def reset_rolann(self) -> None:
-        self.rolann.reset()

@@ -1,10 +1,23 @@
 import argparse
+import json
 import os
+from pathlib import Path
+
+from loguru import logger
+import numpy as np
 from train import train
-from data_utils import set_dataloaders
+from data_utils import get_datasets, get_transforms
 from model_utils import build_model
-from plotting import plot_results
-from config import get_config
+from plotting import plot_results, plot_task_accuracies
+from config import get_batch_config
+
+# Set up loguru logger
+logger.remove()
+logger.add(
+    lambda msg: print(msg, end=""),
+    colorize=True,
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     dataset_group.add_argument(
         "--num_instances",
         type=int,
-        default=5000,
+        default=None,
         help="Number of instances to use from the dataset (default: 5000)",
     )
 
@@ -69,6 +82,13 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.001,
         help="Learning rate term for the backbone model.",
+    )
+    model_group.add_argument(
+        "--freeze_mode",
+        type=str,
+        default="all",
+        choices=["none", "all", "partial"],
+        help="Freezing mode for the backbone: none, all, or partial",
     )
 
     # ROLANN specific arguments
@@ -111,6 +131,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable Weights & Biases (WandB) for experiment tracking.",
     )
+    training_group.add_argument(
+        "--num_tasks",
+        type=int,
+        default=5,
+        help="Number of tasks in the incremental learning setup.",
+    )
+    training_group.add_argument(
+        "--classes_per_task",
+        type=int,
+        default=2,
+        help="Number of classes introduced in each task.",
+    )
 
     parser.add_argument(
         "--output_dir",
@@ -124,33 +156,49 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    config = get_config(args)
+    config = get_batch_config(args)
 
     # Print parsed arguments
-    print(f"Dataset: {args.dataset}")
-    print(
-        f"Backbone: {args.backbone} {'not' if not args.pretrained else ''} pretrained"
+    logger.info(f"Dataset: {args.dataset}")
+    logger.info(
+        f"Backbone: {args.backbone} ({'pretrained' if args.pretrained else 'not pretrained'}) (Freeze mode: {args.freeze_mode})"
     )
-    print(f"Binary Classification: {args.binary}")
-    print(f"Batch Size: {args.batch_size}")
-    print(f"Epochs: {args.epochs}")
-    print(
+    logger.info(f"Batch Size: {args.batch_size}")
+    logger.info(f"Epochs: {args.epochs}")
+    logger.info(
         f"ROLANN Lambda: {args.rolann_lamb} with dropout {args.dropout_rate} {'with reset after epoch' if args.reset else ''} {'and sparse mode' if args.sparse else ''}"
     )
-    print(f"Use WandB: {'Enabled' if args.use_wandb else 'Disabled'}")
+    logger.info(f"Use WandB: {'Enabled' if args.use_wandb else 'Disabled'}")
 
-    train_loader, test_loader = set_dataloaders(config)
+    logger.info(f"Output Directory: {args.output_dir}")
+    logger.info(f"Training on device {config['device']}")
+
+    train_dataset, test_dataset, num_classes = get_datasets(
+        config["dataset"],
+        transform=get_transforms(config["dataset"], config["flatten"]),
+    )
+
+    Path(args.output_dir).mkdir(exist_ok=True, parents=True)
+    
+    config["num_classes"] = num_classes
+
     model = build_model(config)
 
-    results = train(model, train_loader, test_loader, config)
-    print(f"Train Accuracy: {results['train_accuracy'][-1]:.4f}")
-    print(f"Test Accuracy: {results['test_accuracy'][-1]:.4f}")
+    _, task_accuracies = train(model, train_dataset, test_dataset, config)
+    
+    mean_test_accuracy =  np.mean([acc[0] for acc in task_accuracies.values()])
+    logger.info(f"Test Accuracy: {mean_test_accuracy}")
 
     plot_filename = f"{args.dataset}_{args.backbone}_plot.png"
     plot_path = os.path.join(args.output_dir, plot_filename)
 
-    plot_results(results, save_path=plot_path)
-    print(f"Plot saved to: {plot_path}")
+    plot_task_accuracies(task_accuracies, config["num_tasks"], save_path=plot_path)
+    logger.info(f"Plot saved to: {plot_path}")
+
+    arguments_path = os.path.join(args.output_dir, "config.json")
+
+    with open(arguments_path, "w") as f:
+        json.dump(config, f, indent=4)
 
 
 if __name__ == "__main__":

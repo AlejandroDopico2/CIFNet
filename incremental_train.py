@@ -1,4 +1,5 @@
 from typing import Any, Dict, List
+from loguru import logger
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -6,14 +7,22 @@ from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 from incremental_data_utils import prepare_data
 from test import evaluate
+from utils import split_dataset
 
 
-def train(
+def incremental_train(
     model: nn.Module,
     train_dataset: Subset,
     test_dataset: Subset,
     config: Dict[str, Any],
 ) -> Dict[str, List[float]]:
+    
+    logger.remove()  # Remove default logger to customize it
+    logger.add(
+        lambda msg: print(msg, end=""),
+        colorize=True,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    )
 
     device = config["device"]
     criterion = nn.CrossEntropyLoss()
@@ -42,11 +51,13 @@ def train(
 
     for task in range(config["num_tasks"]):
         classes_per_task = config["classes_per_task"]
-        print(
-            f"\nTraining on classes {task*classes_per_task} to {(task+1)*classes_per_task - 1}"
+        logger.info(
+            f"Training on classes {task*classes_per_task} to {(task+1)*classes_per_task - 1}"
         )
 
         model.rolann.add_num_classes(classes_per_task)
+
+        current_num_classes = (task + 1) * classes_per_task
 
         class_range = range(task * classes_per_task, (task + 1) * classes_per_task)
 
@@ -57,11 +68,20 @@ def train(
             samples_per_task=config["samples_per_task"],
         )
 
-        train_loader = DataLoader(
-            train_subset, batch_size=config["batch_size"], shuffle=True
-        )
+        if model.backbone and not config["freeze_mode"] == "all":
+            train_loader, val_loader = split_dataset(
+                train_subset=train_subset, config=config
+            )
+        else:
+            train_loader = DataLoader(
+                train_subset, batch_size=config["batch_size"], shuffle=True
+            )
 
         num_epochs = config["epochs"] if not config["freeze_mode"] == "all" else 1
+
+        best_val_loss = float("inf")
+        patience = config["patience"]
+        patience_counter = 0
 
         for epoch in range(num_epochs):
 
@@ -72,16 +92,13 @@ def train(
             total_samples = 0
             batch_count = 0
 
-            if config["reset"]:
-                model.reset_rolann()
-
             for inputs, labels in tqdm(
                 train_loader, desc=f"Task {task+1} Epoch {epoch + 1}"
             ):
                 inputs, labels = inputs.to(device), labels.to(device)
 
                 labels = torch.nn.functional.one_hot(
-                    labels, num_classes=(task + 1) * classes_per_task
+                    labels, num_classes=current_num_classes
                 )
 
                 labels = process_labels(labels)
@@ -106,51 +123,72 @@ def train(
             epoch_loss = running_loss / batch_count
             epoch_acc = (total_correct / total_samples).item()
 
-            print(
+            logger.info(
                 f"Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}"
             )
 
-            # Evaluate on all tasks seen so far
-            for eval_task in range(task + 1):
-                test_subset = prepare_data(
-                    test_dataset,
-                    class_range=range(
-                        eval_task * classes_per_task, (eval_task + 1) * classes_per_task
-                    ),
-                    samples_per_task=config["samples_per_task"],
-                )
-
-                test_loader = DataLoader(
-                    test_subset, batch_size=config["batch_size"], shuffle=True
-                )
-
-                test_loss, test_accuracy = evaluate(
+            if model.backbone and not config["freeze_mode"] == "all":
+                val_loss, val_accuracy = evaluate(
                     model,
-                    test_loader,
+                    val_loader,
                     criterion,
                     epoch,
-                    num_classes=(task + 1) * classes_per_task,
+                    num_classes=current_num_classes,
                     device=device,
-                    task=eval_task + 1,
+                    task=task + 1,
+                    mode="Validation",
                 )
 
-                task_accuracies[eval_task].append(test_accuracy)
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+                    if patience_counter >= patience:
+                        logger.info(f"Early stopping triggered at epoch {epoch + 1}")
+                        break
 
-                if eval_task == task:  # Only log the current task's performance
-                    if config["use_wandb"]:
-                        wandb.log(
-                            {
-                                f"train_accuracy_task_{task+1}": epoch_acc,
-                                f"train_loss_task_{task+1}": epoch_loss,
-                                f"test_accuracy_task_{task+1}": test_accuracy,
-                                f"test_loss_task_{task+1}": test_loss,
-                            }
-                        )
+        # Evaluate on all tasks seen so far
+        for eval_task in range(task + 1):
+            test_subset = prepare_data(
+                test_dataset,
+                class_range=range(
+                    eval_task * classes_per_task, (eval_task + 1) * classes_per_task
+                ),
+                samples_per_task=config["samples_per_task"],
+            )
 
-                    results["train_loss"].append(epoch_loss)
-                    results["train_accuracy"].append(epoch_acc)
-                    results["test_loss"].append(test_loss)
-                    results["test_accuracy"].append(test_accuracy)
+            test_loader = DataLoader(
+                test_subset, batch_size=config["batch_size"], shuffle=True
+            )
+
+            test_loss, test_accuracy = evaluate(
+                model,
+                test_loader,
+                criterion,
+                epoch,
+                num_classes=(task + 1) * classes_per_task,
+                device=device,
+                task=eval_task + 1,
+            )
+
+            task_accuracies[eval_task].append(test_accuracy)
+
+            if eval_task == task:  # Only log the current task's performance
+                if config["use_wandb"]:
+                    wandb.log(
+                        {
+                            f"train_accuracy_task_{task+1}": epoch_acc,
+                            f"train_loss_task_{task+1}": epoch_loss,
+                            f"test_accuracy_task_{task+1}": test_accuracy,
+                            f"test_loss_task_{task+1}": test_loss,
+                        }
+                    )
+
+                results["train_loss"].append(epoch_loss)
+                results["train_accuracy"].append(epoch_acc)
+                results["test_loss"].append(test_loss)
+                results["test_accuracy"].append(test_accuracy)
 
     # Add task accuracies to results
     for task, accuracies in task_accuracies.items():
