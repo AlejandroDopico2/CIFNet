@@ -1,5 +1,5 @@
 from models.ROLANN_incremental import ROLANN_Incremental
-from models.Backbone import Backbone
+from models.backbone import Backbone
 from models.ROLANN import ROLANN as ROLANN
 from models.ROLANN_optim import ROLANN as ROLANN_optim
 import torch.nn as nn

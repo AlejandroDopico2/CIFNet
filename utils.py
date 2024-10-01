@@ -4,7 +4,7 @@
 
 import os
 import struct
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from matplotlib import pyplot as plt
 import numpy as np
@@ -209,7 +209,7 @@ def calculate_cl_metrics(task_accuracies: Dict[int, List[float]]):
 
 def split_dataset(
     train_subset: Subset, config: Dict[str, Any]
-) -> tuple[DataLoader, DataLoader]:
+) -> Tuple[DataLoader, DataLoader]:
     train_size = int(0.8 * len(train_subset))
     val_size = len(train_subset) - train_size
     train_subset, val_subset = random_split(train_subset, [train_size, val_size])

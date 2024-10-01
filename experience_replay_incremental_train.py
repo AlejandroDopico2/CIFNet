@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from loguru import logger
 import torch
 import torch.nn as nn
@@ -22,7 +22,7 @@ def train_step(
     total_samples: int,
     batch_count: int,
     running_loss: float,
-) -> tuple[int, int, int, int]:
+) -> Tuple[int, int, int, int]:
 
     labels = process_labels(labels)
 

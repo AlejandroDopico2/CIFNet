@@ -2,7 +2,7 @@ import torch.nn as nn
 import importlib
 from typing import Any, Dict, Type
 from models.RolanNET import RolanNET
-from models.Backbone import Backbone
+from models.backbone import Backbone
 
 
 def get_backbone_class(module_name: str, class_name: str) -> Type[Backbone]:
