@@ -6,14 +6,14 @@ import pandas as pd
 import json
 from loguru import logger
 
-from data_utils import get_transforms
-from experience_replay_incremental_train import train_ER_AfterEpoch, train_ER_EachStep
+from utils.data_utils import get_transforms
+from scripts.experience_replay_incremental_train import train_ER_AfterEpoch, train_ER_EachStep
 from incremental_train import incremental_train
-from incremental_data_utils import get_datasets
-from model_utils import build_incremental_model
-from plotting import plot_task_accuracies
+from utils.incremental_data_utils import get_datasets
+from utils.model_utils import build_incremental_model
+from utils.plotting import plot_task_accuracies
 from config import get_continual_config
-from utils import calculate_cl_metrics
+from utils.utils import calculate_cl_metrics
 
 # Set up loguru logger
 logger.remove()
@@ -133,7 +133,7 @@ def parse_args() -> argparse.Namespace:
     incremental_group.add_argument(
         "--buffer_size",
         type=int,
-        default=100,
+        default=None,
         help="Number of instances of each task to save in replay buffer.",
     )
     incremental_group.add_argument(

@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 from sklearn.metrics import accuracy_score
 import torch
-from models.RolanNET import RolanNET
+from models.rolannet import RolanNET
 
 from torch.utils.data import Subset, random_split, DataLoader
 

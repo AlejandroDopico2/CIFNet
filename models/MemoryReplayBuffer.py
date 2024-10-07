@@ -1,12 +1,11 @@
 import random
+from typing import Optional, Tuple
 import torch
 from collections import defaultdict, deque
-import numpy as np
 
 
 class MemoryReplayBuffer:
-    def __init__(self, memory_size_per_class: int, store_targets: bool = True):
-        self.memory_size_per_class = memory_size_per_class
+    def __init__(self, memory_size_per_class: Optional[int], store_targets: bool = True):
         self.buffer = defaultdict(lambda: deque(maxlen=memory_size_per_class))
         self.store_targets = store_targets
         self.class_count = 0
@@ -23,8 +22,7 @@ class MemoryReplayBuffer:
                 self.class_count = label_item + 1
 
     def get_memory_samples(
-        self, batch_size: int = None, num_classes: int = None
-    ) -> torch.Tensor:
+        self, batch_size: int = None) -> Tuple[torch.Tensor]:
         x_memory, y_memory = [], []
 
         if self.class_count == 0:
@@ -48,16 +46,45 @@ class MemoryReplayBuffer:
             x_memory = torch.stack(x_memory)
             if self.store_targets:
                 y_memory = torch.tensor(y_memory, dtype=torch.long)
-                y_memory = self._one_hot_encode(y_memory, num_classes)
+                y_memory = self._one_hot_encode(y_memory, self.class_count)
             else:
                 y_memory = torch.stack(y_memory)
-                if num_classes is not None:
-                    y_memory = self._expand_one_hot(y_memory, num_classes)
+                if self.class_count is not None:
+                    y_memory = self._expand_one_hot(y_memory, self.class_count)
         else:
             x_memory = torch.empty(0)
             y_memory = torch.empty(0)
 
         return x_memory, y_memory
+    
+    def get_past_tasks_samples(self, task_id:int, classes_per_task: int, batch_size: Optional[int] = None) -> Tuple[torch.Tensor]:
+        x_memory, y_memory = [], []
+
+        if task_id >= self.class_count:
+            return torch.empty(0), torch.empty(0)
+        
+        class_range = range(task_id * classes_per_task)
+        if batch_size is None:
+            for class_id in class_range:
+                x_memory.extend([x for x, _ in self.buffer[class_id]])
+                y_memory.extend([y for _, y in self.buffer[class_id]])
+
+        # else: TODO Add dynamic buffer size
+
+        if x_memory:  # Check if the list is not empty
+            x_memory = torch.stack(x_memory)
+            if self.store_targets:
+                y_memory = torch.tensor(y_memory, dtype=torch.long)
+                y_memory = self._one_hot_encode(y_memory, self.class_count)
+            else:
+                y_memory = torch.stack(y_memory)
+                y_memory = self._expand_one_hot(y_memory, self.class_count)
+        else:
+            x_memory = torch.empty(0)
+            y_memory = torch.empty(0)
+
+        return x_memory, y_memory
+
 
     def _one_hot_encode(self, labels: torch.Tensor, num_classes: int = None):
         if num_classes is None:

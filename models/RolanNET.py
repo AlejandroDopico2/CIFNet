@@ -1,6 +1,6 @@
 from models.ROLANN_incremental import ROLANN_Incremental
 from models.Backbone import Backbone
-from models.ROLANN import ROLANN
+from models.rolann import ROLANN
 import torch.nn as nn
 import torch
 from typing import Optional

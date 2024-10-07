@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 from utils.incremental_data_utils import CustomDataset, load_mnist, prepare_data
 from utils.utils import split_dataset
-from test import evaluate
+from scripts.test import evaluate
 
 
 def incremental_train(

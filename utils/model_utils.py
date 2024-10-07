@@ -1,7 +1,7 @@
 import torch.nn as nn
 import importlib
 from typing import Any, Dict, Type
-from models.RolanNET import RolanNET
+from models.rolannet import RolanNET
 from models.Backbone import Backbone
 
 
