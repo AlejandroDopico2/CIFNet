@@ -197,8 +197,12 @@ def main(args=None) -> Dict[str, Union[float, str]]:
     logger.info(f"Number of Tasks: {args.num_tasks}")
     logger.info(f"Classes per Task: {args.classes_per_task}")
     logger.info(f"Initial Tasks: {args.initial_tasks}")
-    logger.info(f"Using Experience Replay: {args.use_er} {'each step' if args.each_step else 'each epoch.'}")
-    logger.info(f"Samples per Task: {config['samples_per_task'] if config['samples_per_task'] else 'all the dataset.'}")
+    logger.info(
+        f"Using Experience Replay: {args.use_er} {'each step' if args.each_step else 'each epoch.'}"
+    )
+    logger.info(
+        f"Samples per Task: {config['samples_per_task'] if config['samples_per_task'] else 'all the dataset.'}"
+    )
     logger.info(f"Weights & Biases: {'Enabled' if args.use_wandb else 'Disabled'}")
     logger.info(f"Output Directory: {args.output_dir}")
     logger.info(f"Training on device {config['device']}")
@@ -218,7 +222,7 @@ def main(args=None) -> Dict[str, Union[float, str]]:
     if args.use_er:
 
         if args.each_step:
-            results, task_accuracies = train_ER_EachStep(
+            results, task_train_accuracies, task_accuracies = train_ER_EachStep(
                 model, train_dataset, test_dataset, config
             )
         else:
@@ -226,7 +230,9 @@ def main(args=None) -> Dict[str, Union[float, str]]:
                 model, train_dataset, test_dataset, config
             )
     else:
-        results, task_accuracies = incremental_train(model, train_dataset, test_dataset, config)
+        results, task_train_accuracies, task_accuracies = incremental_train(
+            model, train_dataset, test_dataset, config
+        )
 
     cl_metrics = calculate_cl_metrics(task_accuracies)
 
@@ -249,7 +255,7 @@ def main(args=None) -> Dict[str, Union[float, str]]:
             "classes_per_task",
             "buffer_size",
             "use_er",
-            "each_step"
+            "each_step",
         ]
     }
 
@@ -277,11 +283,16 @@ def main(args=None) -> Dict[str, Union[float, str]]:
 
     logger.info(f"Average Forgetting: {cl_metrics['avg_forgetting']:.4f}")
     logger.info(f"Average Retained Accuracy: {cl_metrics['avg_retained']:.4f}")
+    logger.info(
+        f"Average Final Accuracy: {cl_metrics['avg_final_accuracy']* 100 :.4f}% "
+    )
     logger.info(f"Results appended to: {csv_path}")
     logger.info(f"Detailed results saved to: {json_path}")
 
     # Plotting task accuracies
-    plot_task_accuracies(task_accuracies, config["num_tasks"], save_path=plot_path)
+    plot_task_accuracies(
+        task_train_accuracies, task_accuracies, config["num_tasks"], save_path=plot_path
+    )
     logger.info(f"Plot saved to: {plot_path}")
 
     return log_data

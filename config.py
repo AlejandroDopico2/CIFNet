@@ -3,6 +3,7 @@ import datetime
 from typing import Any, Dict
 import torch
 
+
 def get_batch_config(args: argparse.Namespace) -> Dict[str, Any]:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     # device = "cpu"
@@ -33,8 +34,7 @@ def get_batch_config(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def get_continual_config(args: argparse.Namespace) -> Dict[str, Any]:
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    # device = "cpu"
+    device = "cuda" if torch.cuda.is_available() and args.backbone else "cpu"
     experiment_name = datetime.datetime.now().strftime("experiment_%Y-%m-%d_%H-%M-%S")
 
     config = {

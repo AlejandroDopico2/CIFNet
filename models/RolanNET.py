@@ -1,7 +1,6 @@
 from models.ROLANN_incremental import ROLANN_Incremental
-from models.backbone import Backbone
-from models.ROLANN import ROLANN as ROLANN
-from models.ROLANN_optim import ROLANN as ROLANN_optim
+from models.Backbone import Backbone
+from models.ROLANN import ROLANN
 import torch.nn as nn
 import torch
 from typing import Optional
@@ -41,7 +40,7 @@ class RolanNET(nn.Module):
                 lamb=lamb,
                 sparse=sparse,
                 dropout_rate=dropout_rate,
-                freeze_output=freeze_rolann
+                freeze_output=freeze_rolann,
             ).to(self.device)
         else:
             self.rolann = ROLANN(

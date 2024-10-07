@@ -23,7 +23,7 @@ def train(
         colorize=True,
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
     )
-    
+
     device = config["device"]
     criterion = nn.CrossEntropyLoss()
     optimizer = (
@@ -43,7 +43,11 @@ def train(
         wandb.init(project="RolanNet-Model", config=config)
         wandb.watch(model)
 
-    num_train = min(config["num_instances"], len(train_dataset)) if config["num_instances"] is not None else len(train_dataset)
+    num_train = (
+        min(config["num_instances"], len(train_dataset))
+        if config["num_instances"] is not None
+        else len(train_dataset)
+    )
     train_indices = torch.randperm(len(train_dataset))[:num_train]
     train_subset = Subset(train_dataset, train_indices)
 
@@ -97,7 +101,9 @@ def train(
         epoch_loss = running_loss / batch_count
         epoch_acc = (total_correct / total_samples).item()
 
-        logger.info(f"Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}")
+        logger.info(
+            f"Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}"
+        )
 
         # test_loss, test_accuracy = evaluate(
         #     model, test_loader, criterion, epoch, config["num_classes"], device
@@ -121,7 +127,10 @@ def train(
     for eval_task in range(config["num_tasks"]):
         test_subset = prepare_data(
             test_dataset,
-            class_range=range(eval_task * config["classes_per_task"], (eval_task + 1) * config["classes_per_task"]),
+            class_range=range(
+                eval_task * config["classes_per_task"],
+                (eval_task + 1) * config["classes_per_task"],
+            ),
         )
 
         test_loader = DataLoader(

@@ -7,7 +7,9 @@ from torchvision import transforms, datasets
 def get_transforms(dataset: str, flatten: bool) -> transforms.Compose:
 
     if dataset == "MNIST":
-        transform_list = [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]
+        transform_list = [transforms.ToTensor()]
+        if not flatten:
+            transform_list.append(transforms.Normalize((0.5,), (0.5,)))
     elif dataset.startswith("CIFAR"):
         transform_list = [
             transforms.ToTensor(),

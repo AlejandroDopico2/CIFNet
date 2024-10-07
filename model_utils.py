@@ -2,7 +2,7 @@ import torch.nn as nn
 import importlib
 from typing import Any, Dict, Type
 from models.RolanNET import RolanNET
-from models.backbone import Backbone
+from models.Backbone import Backbone
 
 
 def get_backbone_class(module_name: str, class_name: str) -> Type[Backbone]:
@@ -61,7 +61,7 @@ def build_incremental_model(config: Dict[str, Any]) -> nn.Module:
         device=config["device"],
         incremental=True,
         freeze_mode=config["freeze_mode"],
-        freeze_rolann=config["freeze_rolann"]
+        freeze_rolann=config["freeze_rolann"],
     ).to(config["device"])
 
     return model

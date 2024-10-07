@@ -206,7 +206,6 @@ def calculate_cl_metrics(task_accuracies: Dict[int, List[float]]):
     }
 
 
-
 def split_dataset(
     train_subset: Subset, config: Dict[str, Any]
 ) -> Tuple[DataLoader, DataLoader]:

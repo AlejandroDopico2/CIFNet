@@ -5,14 +5,10 @@ Created on Tue Jul 16 10:11:21 2024
 @author: Oscar & Alejandro
 """
 
-from time import time
-from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
-
-from models.WeightTracker import WeightTracker
 
 
 class ROLANN_Incremental(nn.Module):
@@ -23,7 +19,7 @@ class ROLANN_Incremental(nn.Module):
         activation: str = "logs",
         sparse: bool = False,
         dropout_rate: float = 0.0,
-        freeze_output: bool = False
+        freeze_output: bool = False,
     ):
         super(ROLANN_Incremental, self).__init__()
 
@@ -205,7 +201,11 @@ class ROLANN_Incremental(nn.Module):
                 self.w[c] = w
 
     def aggregate_update(self, X: Tensor, d: Tensor):
-        unique_classes = torch.argmax(d, dim=1).unique() if self.freeze_output else range(self.num_classes)
+        unique_classes = (
+            torch.argmax(d, dim=1).unique()
+            if self.freeze_output
+            else range(self.num_classes)
+        )
 
         self.update_weights(X, d, unique_classes)  # Se calculan las nuevas M y US
         self._aggregate_parcial(

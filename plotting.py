@@ -62,7 +62,10 @@ def plot_overall_accuracy(overall_accuracies, num_classes_per_task, num_classes_
 
 
 def plot_task_accuracies(
-    task_accuracies, num_tasks, save_path: str = "task_accuracies.png"
+    task_train_accuracies,
+    task_accuracies,
+    num_tasks,
+    save_path: str = "task_accuracies.png",
 ):
     """
     Plots the accuracies for each task throughout training, ensuring all tasks end at the same
@@ -79,6 +82,18 @@ def plot_task_accuracies(
         task += 1
         x = list(range(task, task + len(accuracies)))
         plt.plot(x, accuracies, marker="o", label=f"Task {task}")
+
+    if task_train_accuracies is not None:
+        for task, train_accuracy in task_train_accuracies.items():
+            task += 1
+            plt.plot(
+                [task],
+                [train_accuracy],
+                marker="*",
+                markersize=10,
+                color="red",
+                label=f"Task {task} (Train)",
+            )
 
     plt.title("Task Accuracy Throughout Training")
     plt.xlabel("Number of Tasks Learned")

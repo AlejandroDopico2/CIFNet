@@ -179,14 +179,14 @@ def main() -> None:
     )
 
     Path(args.output_dir).mkdir(exist_ok=True, parents=True)
-    
+
     config["num_classes"] = num_classes
 
     model = build_model(config)
 
     _, task_accuracies = train(model, train_dataset, test_dataset, config)
-    
-    mean_test_accuracy =  np.mean([acc[0] for acc in task_accuracies.values()])
+
+    mean_test_accuracy = np.mean([acc[0] for acc in task_accuracies.values()])
     logger.info(f"Test Accuracy: {mean_test_accuracy}")
 
     plot_filename = f"{args.dataset}_{args.backbone}_plot.png"

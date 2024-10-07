@@ -46,6 +46,7 @@ def train_step(
 
     return total_correct, total_samples, batch_count, running_loss
 
+
 def train_ER_EachStep(
     model: RolanNET,
     train_dataset: Subset,
@@ -81,6 +82,8 @@ def train_ER_EachStep(
     task_accuracies: Dict[int, List[float]] = {
         i: [] for i in range(config["num_tasks"])
     }
+
+    task_train_accuracies: Dict[int, float] = {}
 
     if config["use_wandb"]:
         import wandb
@@ -173,6 +176,8 @@ def train_ER_EachStep(
                 f"Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}"
             )
 
+            task_train_accuracies[task] = epoch_acc
+
             val_loss, _ = evaluate(
                 model,
                 val_loader,
@@ -193,7 +198,7 @@ def train_ER_EachStep(
                     if patience_counter >= patience:
                         logger.info(f"Early stopping triggered at epoch {epoch + 1}")
                         break
-        
+
         # Evaluate on all tasks seen so far
         for eval_task in range(task + 1):
             test_subset = prepare_data(
@@ -245,9 +250,7 @@ def train_ER_EachStep(
     if config["use_wandb"]:
         wandb.finish()
 
-    # model.rolann.visualize_weights()
-
-    return results, task_accuracies
+    return results, task_train_accuracies, task_accuracies
 
 
 def train_ER_AfterEpoch(
@@ -285,6 +288,8 @@ def train_ER_AfterEpoch(
     task_accuracies: Dict[int, List[float]] = {
         i: [] for i in range(config["num_tasks"])
     }
+
+    task_train_accuracies: Dict[int, float] = {}
 
     if config["use_wandb"]:
         import wandb
@@ -360,10 +365,11 @@ def train_ER_AfterEpoch(
                 f"Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}"
             )
 
+            task_train_accuracies[task] = epoch_acc
+
             x_memory, y_memory = replayBuffer.get_memory_samples(
                 batch_size=buffer_batch_size, num_classes=current_num_classes
             )
-            
 
             train_step(
                 model,
@@ -388,7 +394,6 @@ def train_ER_AfterEpoch(
                 mode="Validation",
             )
 
-
             if model.backbone and not config["freeze_mode"] == "all":
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
@@ -398,7 +403,7 @@ def train_ER_AfterEpoch(
                     if patience_counter >= patience:
                         logger.info(f"Early stopping triggered at epoch {epoch + 1}")
                         break
-        
+
         # Evaluate on all tasks seen so far
         for eval_task in range(task + 1):
             test_subset = prepare_data(
@@ -450,7 +455,7 @@ def train_ER_AfterEpoch(
     if config["use_wandb"]:
         wandb.finish()
 
-    return results, task_accuracies
+    return results, task_train_accuracies, task_accuracies
 
 
 def process_labels(labels: torch.Tensor) -> torch.Tensor:

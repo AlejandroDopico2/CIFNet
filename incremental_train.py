@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, List
 from loguru import logger
 import torch
@@ -5,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
-from incremental_data_utils import prepare_data
+from incremental_data_utils import CustomDataset, load_mnist, prepare_data
 from test import evaluate
 from utils import split_dataset
 
@@ -16,7 +17,7 @@ def incremental_train(
     test_dataset: Subset,
     config: Dict[str, Any],
 ) -> Dict[str, List[float]]:
-    
+
     logger.remove()  # Remove default logger to customize it
     logger.add(
         lambda msg: print(msg, end=""),
@@ -42,6 +43,24 @@ def incremental_train(
     task_accuracies: Dict[int, List[float]] = {
         i: [] for i in range(config["num_tasks"])
     }
+
+    task_train_accuracies: Dict[int, float] = {}
+
+    if config["dataset"] == "MNIST":
+
+        data_path = os.path.join("Data", "MNIST", "raw")
+        flatten = False if model.backbone else True
+        X_train, y_train = load_mnist(data_path, kind="train", flatten=flatten)
+        X_test, y_test = load_mnist(data_path, kind="t10k", flatten=flatten)
+
+        X_train = torch.from_numpy(X_train).float()
+        X_test = torch.from_numpy(X_test).float()
+
+        y_train = torch.from_numpy(y_train).long()
+        y_test = torch.from_numpy(y_test).long()
+
+        train_dataset = CustomDataset(X_train, y_train)
+        test_dataset = CustomDataset(X_test, y_test)
 
     if config["use_wandb"]:
         import wandb
@@ -124,16 +143,16 @@ def incremental_train(
             epoch_acc = (total_correct / total_samples).item()
 
             logger.info(
-                f"Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}"
+                f"Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc:.2f}%"
             )
+
+            task_train_accuracies[task] = epoch_acc
 
             if model.backbone and not config["freeze_mode"] == "all":
                 val_loss, val_accuracy = evaluate(
                     model,
                     val_loader,
                     criterion,
-                    epoch,
-                    num_classes=current_num_classes,
                     device=device,
                     task=task + 1,
                     mode="Validation",
@@ -150,12 +169,14 @@ def incremental_train(
 
         # Evaluate on all tasks seen so far
         for eval_task in range(task + 1):
+
+            test_class_range = range(
+                eval_task * classes_per_task, (eval_task + 1) * classes_per_task
+            )
             test_subset = prepare_data(
                 test_dataset,
-                class_range=range(
-                    eval_task * classes_per_task, (eval_task + 1) * classes_per_task
-                ),
-                samples_per_task=config["samples_per_task"],
+                class_range=test_class_range,
+                samples_per_task=None,
             )
 
             test_loader = DataLoader(
@@ -166,8 +187,6 @@ def incremental_train(
                 model,
                 test_loader,
                 criterion,
-                epoch,
-                num_classes=(task + 1) * classes_per_task,
                 device=device,
                 task=eval_task + 1,
             )
@@ -194,13 +213,11 @@ def incremental_train(
     for task, accuracies in task_accuracies.items():
         results[f"task_{task+1}_accuracy"] = accuracies
 
-    # model.rolann.visualize_weights()
-
     if config["use_wandb"]:
         wandb.finish()
 
-    return results, task_accuracies
+    return results, task_train_accuracies, task_accuracies
 
 
 def process_labels(labels: torch.Tensor) -> torch.Tensor:
-    return labels * 0.9 + 0.05
+    return labels * 0.90 + 0.05

@@ -1,8 +1,45 @@
-from typing import Optional, Tuple
+import os
+import struct
+from typing import List, Optional, Tuple
 import numpy as np
 import torch
 from torch.utils.data import Dataset, Subset
 from torchvision import transforms, datasets
+
+
+class CustomDataset(Dataset):
+    def __init__(self, X, y):
+        self.X = X
+        self.targets = y
+
+    def __len__(self):
+        return len(self.targets)
+
+    def __getitem__(self, idx):
+        return self.X[idx], self.targets[idx]
+
+
+def load_mnist(path, kind="train", flatten: bool = False):
+    """Load MNIST data from `path`"""
+    labels_path = os.path.join(path, f"{kind}-labels-idx1-ubyte")
+    images_path = os.path.join(path, f"{kind}-images-idx3-ubyte")
+
+    with open(labels_path, "rb") as lbpath:
+        magic, n = struct.unpack(">II", lbpath.read(8))
+        labels = np.frombuffer(lbpath.read(), dtype=np.uint8)
+
+    with open(images_path, "rb") as imgpath:
+        magic, num, rows, cols = struct.unpack(">IIII", imgpath.read(16))
+        images = np.frombuffer(imgpath.read(), dtype=np.uint8)
+        if flatten:
+            images = images.reshape(len(labels), 784)
+        else:
+            images = images.reshape(len(labels), 28, 28)
+            images = np.moveaxis(images, -1, 1)
+            images = np.expand_dims(images, 1)
+        images = images.astype(np.float32) / 255.0
+
+    return images, labels
 
 
 def get_transforms(dataset: str, flatten: bool) -> transforms.Compose:
@@ -61,7 +98,50 @@ def get_datasets(
     return train_dataset, test_dataset
 
 
-def prepare_data(dataset: Dataset, class_range: int, samples_per_task: Optional[int] = None) -> Subset:
+def prepare_data(
+    dataset: Dataset, class_range: List[int], samples_per_task: Optional[int] = None
+) -> Subset:
+    # Determine whether the dataset uses 'targets' or 'labels'
+    if hasattr(dataset, "targets"):
+        targets = dataset.targets
+    elif hasattr(dataset, "labels"):
+        targets = dataset.labels
+    else:
+        raise AttributeError("Dataset must have an attribute 'targets' or 'labels'.")
+
+    # Convert targets to a PyTorch tensor if it's not already
+    if isinstance(targets, np.ndarray):
+        targets = torch.from_numpy(targets)
+    elif not isinstance(targets, torch.Tensor):
+        targets = torch.tensor(targets)
+
+    # Ensure targets are integers
+    targets = targets.long()
+
+    if samples_per_task is None:
+        # If no sample limit, select all instances of the specified classes
+        class_indices = torch.cat([torch.where(targets == i)[0] for i in class_range])
+    else:
+        samples_per_class = samples_per_task // len(class_range)
+        class_indices = []
+        for i in class_range:
+            class_mask = targets == i
+            class_indices_i = torch.where(class_mask)[0]
+            if len(class_indices_i) > samples_per_class:
+                selected_indices = torch.randperm(len(class_indices_i))[
+                    :samples_per_class
+                ]
+                class_indices.append(class_indices_i[selected_indices])
+            else:
+                class_indices.append(class_indices_i)
+        class_indices = torch.cat(class_indices)
+
+    return Subset(dataset, class_indices)
+
+
+def get_class_instances(
+    dataset: Dataset, class_range: int, samples_per_task: Optional[int] = None
+) -> Subset:
     if hasattr(dataset, "targets"):
         targets = dataset.targets
     elif hasattr(dataset, "labels"):
@@ -76,25 +156,32 @@ def prepare_data(dataset: Dataset, class_range: int, samples_per_task: Optional[
         torch.IntTensor(targets) if not isinstance(targets, torch.Tensor) else targets
     )
 
-    if samples_per_task is None:
-        class_indices = [torch.where(targets == i)[0] for i in class_range]
-    else:
-        samples_per_class = samples_per_task // len(class_range)
+    class_indices = list(class_range)
 
-        class_indices = [
-            torch.tensor(
-                np.random.choice(
-                    indices.numpy(),
-                    min(samples_per_class, len(indices.numpy())),
-                    replace=False,
-                )
-            )
-            for indices in [torch.where(targets==i)[0] for i in class_range]
-        ]
+    all_targets = torch.tensor([dataset.targets[i] for i in range(len(dataset))])
 
-    selected_indices = torch.cat(class_indices)
+    masks = [all_targets == cls for cls in class_indices]
 
-    return Subset(dataset, selected_indices)
+    combined_mask = torch.logical_or(*masks)
+
+    selected_indices = combined_mask.nonzero().squeeze()
+
+    if samples_per_task is not None:
+        final_indices = []
+        for cls in class_indices:
+            cls_mask = all_targets[selected_indices] == cls
+            cls_indices = selected_indices[cls_mask]
+
+            n_samples = min(samples_per_task, len(cls_indices))
+            selected = torch.randperm(len(cls_indices))[:n_samples]
+            final_indices.append(cls_indices[selected])
+
+        selected_indices = torch.cat(final_indices)
+
+    selected_X = [dataset.X[i] for i in selected_indices]
+    selected_targets = [dataset.targets[i] for i in selected_indices]
+
+    return CustomDataset(selected_X, selected_targets)
 
 
 if __name__ == "__main__":

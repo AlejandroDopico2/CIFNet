@@ -10,8 +10,6 @@ def evaluate(
     model: nn.Module,
     test_loader: DataLoader,
     criterion: nn.Module,
-    epoch: int,
-    num_classes: int,
     device: str,
     task: Optional[int] = None,
     mode: str = "Test",
@@ -27,14 +25,10 @@ def evaluate(
         for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
 
-            labels = torch.nn.functional.one_hot(labels, num_classes=num_classes)
-            labels = process_labels(labels)
-
             outputs = model(inputs)
-            loss = criterion(outputs, torch.argmax(labels, dim=1))
+            loss = criterion(outputs, labels)
 
             pred = torch.argmax(outputs, dim=1)
-            labels = torch.argmax(labels, dim=1)
 
             total_correct += (pred == labels).sum()
             total_samples += labels.size(0)
