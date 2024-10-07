@@ -6,9 +6,9 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
-from incremental_data_utils import CustomDataset, load_mnist, prepare_data
+from utils.incremental_data_utils import CustomDataset, load_mnist, prepare_data
+from utils.utils import split_dataset
 from test import evaluate
-from utils import split_dataset
 
 
 def incremental_train(
