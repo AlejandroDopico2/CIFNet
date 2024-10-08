@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 from loguru import logger
 import torch
 import torch.nn as nn
@@ -6,8 +6,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset, Subset
 from tqdm import tqdm
 import wandb
-from incremental_data_utils import prepare_data
-from test import evaluate
+from utils.incremental_data_utils import prepare_data
+from scripts.test import evaluate
 
 
 def train(
@@ -141,8 +141,6 @@ def train(
             model,
             test_loader,
             criterion,
-            epoch,
-            num_classes=(eval_task + 1) * config["classes_per_task"],
             device=device,
             task=eval_task + 1,
         )

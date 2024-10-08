@@ -86,11 +86,13 @@ class RolanNET(nn.Module):
         return x
 
     @torch.no_grad
-    def update_rolann(self, x: torch.Tensor, labels: torch.Tensor) -> None:
+    def update_rolann(
+        self, x: torch.Tensor, labels: torch.Tensor, classes: Optional[int] = None
+    ) -> None:
         if self.backbone:
             x = x.to(self.device)
             x = self.backbone(x).squeeze()
 
         x = x.to(self.device)
 
-        self.rolann.aggregate_update(x, labels.to(self.device))
+        self.rolann.aggregate_update(x, labels.to(self.device), classes=classes)

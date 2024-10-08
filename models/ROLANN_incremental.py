@@ -5,6 +5,7 @@ Created on Tue Jul 16 10:11:21 2024
 @author: Oscar & Alejandro
 """
 
+from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -200,15 +201,19 @@ class ROLANN_Incremental(nn.Module):
             else:
                 self.w[c] = w
 
-    def aggregate_update(self, X: Tensor, d: Tensor):
-        unique_classes = (
-            torch.argmax(d, dim=1).unique()
-            if self.freeze_output
-            else range(self.num_classes)
-        )
+    def aggregate_update(
+        self, X: Tensor, d: Tensor, classes: Optional[int] = None
+    ) -> None:
 
-        self.update_weights(X, d, unique_classes)  # Se calculan las nuevas M y US
+        if classes is None:
+            classes = (
+                torch.argmax(d, dim=1).unique()
+                if self.freeze_output
+                else range(self.num_classes)
+            )
+
+        self.update_weights(X, d, classes)  # Se calculan las nuevas M y US
         self._aggregate_parcial(
-            unique_classes
+            classes
         )  # Se agrega nuevas M y US a antiguas (globales)
-        self._calculate_weights(unique_classes)  # Se calcula los pesos con las nuevas
+        self._calculate_weights(classes)  # Se calcula los pesos con las nuevas

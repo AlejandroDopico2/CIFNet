@@ -7,7 +7,10 @@ import json
 from loguru import logger
 
 from utils.data_utils import get_transforms
-from scripts.experience_replay_incremental_train import train_ER_AfterEpoch, train_ER_EachStep
+from scripts.experience_replay_incremental_train import (
+    train_ER_AfterEpoch,
+    train_ER_EachStep,
+)
 from incremental_train import incremental_train
 from utils.incremental_data_utils import get_datasets
 from utils.model_utils import build_incremental_model
@@ -274,12 +277,13 @@ def main(args=None) -> Dict[str, Union[float, str]]:
     else:
         df.to_csv(csv_path, index=False)
 
-    json_path = os.path.join(
-        args.output_dir, f"{args.dataset}_{args.backbone}_results.json"
-    )
+    dir_path = os.path.join(args.output_dir, f"{args.dataset}_{args.backbone}")
 
-    with open(json_path, "w") as f:
+    with open(dir_path + "_results.json", "w") as f:
         json.dump(log_data, f, indent=4)
+
+    with open(dir_path + "_task_accuracies.json", "w") as f:
+        json.dump(task_accuracies, f, indent=4)
 
     logger.info(f"Average Forgetting: {cl_metrics['avg_forgetting']:.4f}")
     logger.info(f"Average Retained Accuracy: {cl_metrics['avg_retained']:.4f}")
@@ -287,7 +291,7 @@ def main(args=None) -> Dict[str, Union[float, str]]:
         f"Average Final Accuracy: {cl_metrics['avg_final_accuracy']* 100 :.4f}% "
     )
     logger.info(f"Results appended to: {csv_path}")
-    logger.info(f"Detailed results saved to: {json_path}")
+    logger.info(f"Detailed results saved to: {dir_path}")
 
     # Plotting task accuracies
     plot_task_accuracies(

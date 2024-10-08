@@ -5,10 +5,10 @@ from pathlib import Path
 
 from loguru import logger
 import numpy as np
-from train import train
-from data_utils import get_datasets, get_transforms
-from model_utils import build_model
-from plotting import plot_results, plot_task_accuracies
+from scripts.train import train
+from utils.data_utils import get_datasets, get_transforms
+from utils.model_utils import build_model
+from utils.plotting import plot_results, plot_task_accuracies
 from config import get_batch_config
 
 # Set up loguru logger
@@ -192,13 +192,19 @@ def main() -> None:
     plot_filename = f"{args.dataset}_{args.backbone}_plot.png"
     plot_path = os.path.join(args.output_dir, plot_filename)
 
-    plot_task_accuracies(task_accuracies, config["num_tasks"], save_path=plot_path)
+    plot_task_accuracies(
+        None, task_accuracies, config["num_tasks"], save_path=plot_path
+    )
     logger.info(f"Plot saved to: {plot_path}")
 
     arguments_path = os.path.join(args.output_dir, "config.json")
+    results_path = os.path.join(args.output_dir, "results.json")
 
     with open(arguments_path, "w") as f:
         json.dump(config, f, indent=4)
+
+    with open(results_path, "w") as f:
+        json.dump(task_accuracies, f, indent=4)
 
 
 if __name__ == "__main__":

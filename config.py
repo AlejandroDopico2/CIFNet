@@ -5,8 +5,7 @@ import torch
 
 
 def get_batch_config(args: argparse.Namespace) -> Dict[str, Any]:
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    # device = "cpu"
+    device = "cuda" if torch.cuda.is_available() and args.backbone else "cpu"
     experiment_name = datetime.datetime.now().strftime("experiment_%Y-%m-%d_%H-%M-%S")
 
     config = {
@@ -28,6 +27,7 @@ def get_batch_config(args: argparse.Namespace) -> Dict[str, Any]:
         "classes_per_task": args.classes_per_task,
         "freeze_mode": args.freeze_mode,
         "patience": 3,  # TODO: Make an argument.
+        "reset": args.reset,
     }
 
     return config

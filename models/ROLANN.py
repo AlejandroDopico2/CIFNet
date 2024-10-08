@@ -211,7 +211,7 @@ class ROLANN(nn.Module):
                 # Append optimal weights
                 self.w.append(w)
 
-    def aggregate_update(self, X: Tensor, d: Tensor):
+    def aggregate_update(self, X: Tensor, d: Tensor, classes: Optional[int] = None):
         self.update_weights(X, d)  # Se calculan las nuevas M y US
         self._aggregate_parcial()  # Se agrega nuevas M y US a antiguas (globales)
         self._calculate_weights()  # Se calcula los pesos con las nuevas

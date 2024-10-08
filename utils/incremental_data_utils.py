@@ -1,6 +1,7 @@
 import os
 import struct
 from typing import List, Optional, Tuple
+from loguru import logger
 import numpy as np
 import torch
 from torch.utils.data import Dataset, Subset
@@ -98,6 +99,12 @@ def get_datasets(
     return train_dataset, test_dataset
 
 
+class TensorSubset(Subset):
+    def __getitem__(self, index):
+        x, y = self.dataset[self.indices[index]]
+        return x, torch.tensor(y) if not isinstance(y, torch.Tensor) else y
+
+
 def prepare_data(
     dataset: Dataset, class_range: List[int], samples_per_task: Optional[int] = None
 ) -> Subset:
@@ -127,6 +134,7 @@ def prepare_data(
         for i in class_range:
             class_mask = targets == i
             class_indices_i = torch.where(class_mask)[0]
+
             if len(class_indices_i) > samples_per_class:
                 selected_indices = torch.randperm(len(class_indices_i))[
                     :samples_per_class
@@ -136,7 +144,8 @@ def prepare_data(
                 class_indices.append(class_indices_i)
         class_indices = torch.cat(class_indices)
 
-    return Subset(dataset, class_indices)
+    index = class_indices[0]
+    return TensorSubset(dataset, class_indices)
 
 
 def get_class_instances(
