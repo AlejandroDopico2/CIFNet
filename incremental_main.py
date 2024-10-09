@@ -7,10 +7,7 @@ import json
 from loguru import logger
 
 from utils.data_utils import get_transforms
-from scripts.experience_replay_incremental_train import (
-    train_ER_AfterEpoch,
-    train_ER_EachStep,
-)
+from scripts.experience_replay_incremental_train import train_ExpansionBuffer
 from incremental_train import incremental_train
 from utils.incremental_data_utils import get_datasets
 from utils.model_utils import build_incremental_model
@@ -140,16 +137,10 @@ def parse_args() -> argparse.Namespace:
         help="Number of instances of each task to save in replay buffer.",
     )
     incremental_group.add_argument(
-        "--use_er",
+        "--use_eb",
         default=False,
         action="store_true",
-        help="Enable using the Experience Replay Buffer for avoiding CF.",
-    )
-    incremental_group.add_argument(
-        "--each_step",
-        default=False,
-        action="store_true",
-        help="Enable using the Experience Replay each training step.",
+        help="Enable using the Expansion Buffer for avoiding interference.",
     )
 
     # Training process arguments
@@ -201,7 +192,7 @@ def main(args=None) -> Dict[str, Union[float, str]]:
     logger.info(f"Classes per Task: {args.classes_per_task}")
     logger.info(f"Initial Tasks: {args.initial_tasks}")
     logger.info(
-        f"Using Experience Replay: {args.use_er} {'each step' if args.each_step else 'each epoch.'}"
+        f"Using Expansion Buffer: {args.use_eb} with {f'size of {args.buffer_size}' if args.buffer_size else 'with the whole dataset'}."
     )
     logger.info(
         f"Samples per Task: {config['samples_per_task'] if config['samples_per_task'] else 'all the dataset.'}"
@@ -222,16 +213,11 @@ def main(args=None) -> Dict[str, Union[float, str]]:
     plot_path = os.path.join(args.output_dir, filename + "_plot.png")
     log_path = os.path.join(args.output_dir, "results.json")
 
-    if args.use_er:
+    if args.use_eb:
 
-        if args.each_step:
-            results, task_train_accuracies, task_accuracies = train_ER_EachStep(
-                model, train_dataset, test_dataset, config
-            )
-        else:
-            results, task_accuracies = train_ER_AfterEpoch(
-                model, train_dataset, test_dataset, config
-            )
+        results, task_train_accuracies, task_accuracies = train_ExpansionBuffer(
+            model, train_dataset, test_dataset, config
+        )
     else:
         results, task_train_accuracies, task_accuracies = incremental_train(
             model, train_dataset, test_dataset, config

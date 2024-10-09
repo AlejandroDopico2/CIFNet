@@ -59,8 +59,7 @@ def get_continual_config(args: argparse.Namespace) -> Dict[str, Any]:
         "freeze_rolann": args.freeze_rolann,
         "buffer_size": args.buffer_size,
         "patience": 3,  # TODO: Make an argument.
-        "use_er": args.use_er,
-        "each_step": args.each_step,
+        "use_eb": args.use_eb,
     }
 
     return config
