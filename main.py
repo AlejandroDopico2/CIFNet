@@ -61,6 +61,7 @@ def parse_args() -> argparse.Namespace:
             "MobileNet",
             "DenseNet",
             "Custom",
+            "SmallResNet"
         ],
         required=False,
         help="Backbone model type (e.g., ResNet, MobileNet).",
@@ -173,9 +174,11 @@ def main() -> None:
     logger.info(f"Output Directory: {args.output_dir}")
     logger.info(f"Training on device {config['device']}")
 
+    transforms = get_transforms(config["dataset"], config["flatten"])
+
     train_dataset, test_dataset, num_classes = get_datasets(
         config["dataset"],
-        transform=get_transforms(config["dataset"], config["flatten"]),
+        transform=transforms,
     )
 
     Path(args.output_dir).mkdir(exist_ok=True, parents=True)

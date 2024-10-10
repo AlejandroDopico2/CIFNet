@@ -1,5 +1,5 @@
 from models.ROLANN_incremental import ROLANN_Incremental
-from models.Backbone import Backbone
+from models.backbone import Backbone
 from models.rolann import ROLANN
 import torch.nn as nn
 import torch
@@ -76,6 +76,7 @@ class RolanNET(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+
         if self.backbone:
             x = x.to(self.device)
             x = self.backbone(x).squeeze()

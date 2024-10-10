@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset, Subset
 from tqdm import tqdm
-import wandb
 from utils.incremental_data_utils import prepare_data
 from scripts.test import evaluate
 
@@ -40,6 +39,7 @@ def train(
     }
 
     if config["use_wandb"]:
+        import wandb
         wandb.init(project="RolanNet-Model", config=config)
         wandb.watch(model)
 
@@ -59,7 +59,9 @@ def train(
         i: [] for i in range(config["num_tasks"])
     }
 
-    for epoch in range(config["epochs"]):
+    num_epochs = config["epochs"]if model.backbone and not config["freeze_mode"] == "all" else 1
+
+    for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
         total_correct = 0

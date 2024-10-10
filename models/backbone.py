@@ -33,6 +33,24 @@ class ResNetBackbone(Backbone):
                 1, 64, kernel_size=7, stride=2, padding=3, bias=False
             )
 
+class SmallResNetBackbone(Backbone):
+    def __init__(self, pretrained: bool = True):
+        super(SmallResNetBackbone, self).__init__()
+        self.model = (
+            models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+            if pretrained
+            else models.resnet18()
+        )
+        self.model.fc = nn.Identity()  # Remove the final fully connected layer
+
+        self.model.conv1 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, stride=1, padding=1, bias=False)
+
+    def set_input_channels(self, channels: int):
+        if channels == 1:
+            self.model.conv1 = nn.Conv2d(
+                1, 64, kernel_size=7, stride=2, padding=3, bias=False
+            )
+
 
 class MobileNetBackbone(Backbone):
     def __init__(self, pretrained: bool = True):

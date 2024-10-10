@@ -44,19 +44,22 @@ def load_mnist(path, kind="train", flatten: bool = False):
 
 
 def get_transforms(dataset: str, flatten: bool) -> transforms.Compose:
+    transform_list = []
+    
+    if flatten:
+        transform_list = [transforms.Lambda(lambda x: x.view(-1))]
+    # else:
+        # transform_list = [transforms.Resize((224, 224))]
 
     if dataset == "MNIST":
-        transform_list = [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]
+        transform_list.extend([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
     elif dataset.startswith("CIFAR"):
-        transform_list = [
+        transform_list.extend([
             transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-        ]
+            transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010]),
+        ])
     else:
         raise ValueError("Unsupported dataset")
-
-    if flatten:
-        transform_list.append(transforms.Lambda(lambda x: x.view(-1)))
 
     return transforms.Compose(transform_list)
 

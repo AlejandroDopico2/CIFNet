@@ -6,7 +6,7 @@ import pandas as pd
 import json
 from loguru import logger
 
-from utils.data_utils import get_transforms
+from utils.incremental_data_utils import get_transforms
 from scripts.experience_replay_incremental_train import train_ExpansionBuffer
 from incremental_train import incremental_train
 from utils.incremental_data_utils import get_datasets
@@ -54,7 +54,7 @@ def parse_args() -> argparse.Namespace:
     model_group.add_argument(
         "--backbone",
         type=str,
-        choices=["ResNet", "MobileNet", "DenseNet", "Custom"],
+        choices=["ResNet", "SmallResNet", "MobileNet", "DenseNet", "Custom"],
         required=False,
         help="Backbone model type (e.g., ResNet, MobileNet).",
     )
@@ -201,9 +201,11 @@ def main(args=None) -> Dict[str, Union[float, str]]:
     logger.info(f"Output Directory: {args.output_dir}")
     logger.info(f"Training on device {config['device']}")
 
+    transforms = get_transforms(config["dataset"], config["flatten"])
+
     train_dataset, test_dataset = get_datasets(
         config["dataset"],
-        transform=get_transforms(config["dataset"], config["flatten"]),
+        transform=transforms,
     )
     model = build_incremental_model(config)
 
