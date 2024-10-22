@@ -40,6 +40,7 @@ def train(
 
     if config["use_wandb"]:
         import wandb
+
         wandb.init(project="RolanNet-Model", config=config)
         wandb.watch(model)
 
@@ -59,7 +60,9 @@ def train(
         i: [] for i in range(config["num_tasks"])
     }
 
-    num_epochs = config["epochs"]if model.backbone and not config["freeze_mode"] == "all" else 1
+    num_epochs = (
+        config["epochs"] if model.backbone and not config["freeze_mode"] == "all" else 1
+    )
 
     for epoch in range(num_epochs):
         model.train()

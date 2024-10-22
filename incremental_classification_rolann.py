@@ -4,7 +4,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Subset
 from sklearn.metrics import accuracy_score
 from models.ROLANN_incremental import ROLANN_Incremental
-from models.MemoryReplayBuffer import MemoryReplayBuffer
+from models.samplers.MemoryReplayBuffer import MemoryReplayBuffer
 import numpy as np
 import matplotlib.pyplot as plt
 

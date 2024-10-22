@@ -28,8 +28,8 @@ def incremental_train(
     device = config["device"]
     criterion = nn.CrossEntropyLoss()
     optimizer = (
-        optim.Adam(model.parameters(), lr=config["learning_rate"], weight_decay=1e-5)
-        if model.backbone and not config["freeze_mode"] == "all"
+        optim.Adam(model.parameters(), lr=config["model"]["learning_rate"], weight_decay=1e-5)
+        if model.backbone and not config["model"]["freeze_mode"] == "all"
         else None
     )
 
@@ -41,12 +41,12 @@ def incremental_train(
     }
 
     task_accuracies: Dict[int, List[float]] = {
-        i: [] for i in range(config["num_tasks"])
+        i: [] for i in range(config["incremental"]["num_tasks"])
     }
 
     task_train_accuracies: Dict[int, float] = {}
 
-    if config["dataset"] == "MNIST":
+    if config["dataset"]["name"] == "MNIST":
 
         data_path = os.path.join("Data", "MNIST", "raw")
         flatten = False if model.backbone else True
@@ -62,14 +62,14 @@ def incremental_train(
         train_dataset = CustomDataset(X_train, y_train)
         test_dataset = CustomDataset(X_test, y_test)
 
-    if config["use_wandb"]:
+    if config["training"]["use_wandb"]:
         import wandb
 
         wandb.init(project="RolanNet-Model", config=config)
         wandb.watch(model)
 
-    for task in range(config["num_tasks"]):
-        classes_per_task = config["classes_per_task"]
+    for task in range(config["incremental"]["num_tasks"]):
+        classes_per_task = config["incremental"]["classes_per_task"]
         logger.info(
             f"Training on classes {task*classes_per_task} to {(task+1)*classes_per_task - 1}"
         )
@@ -84,22 +84,22 @@ def incremental_train(
         train_subset = prepare_data(
             train_dataset,
             class_range=class_range,
-            samples_per_task=config["samples_per_task"],
+            samples_per_task=config["incremental"]["samples_per_task"],
         )
 
-        if model.backbone and not config["freeze_mode"] == "all":
+        if model.backbone and not config["model"]["freeze_mode"] == "all":
             train_loader, val_loader = split_dataset(
                 train_subset=train_subset, config=config
             )
         else:
             train_loader = DataLoader(
-                train_subset, batch_size=config["batch_size"], shuffle=True
+                train_subset, batch_size=config["dataset"]["batch_size"], shuffle=True
             )
 
-        num_epochs = config["epochs"] if not config["freeze_mode"] == "all" else 1
+        num_epochs = config["training"]["epochs"] if not config["model"]["freeze_mode"] == "all" else 1
 
         best_val_loss = float("inf")
-        patience = config["patience"]
+        patience = config["training"]["patience"]
         patience_counter = 0
 
         for epoch in range(num_epochs):
@@ -148,7 +148,7 @@ def incremental_train(
 
             task_train_accuracies[task] = epoch_acc
 
-            if model.backbone and not config["freeze_mode"] == "all":
+            if model.backbone and not config["model"]["freeze_mode"] == "all":
                 val_loss, val_accuracy = evaluate(
                     model,
                     val_loader,
@@ -180,7 +180,7 @@ def incremental_train(
             )
 
             test_loader = DataLoader(
-                test_subset, batch_size=config["batch_size"], shuffle=True
+                test_subset, batch_size=config["dataset"]["batch_size"], shuffle=True
             )
 
             test_loss, test_accuracy = evaluate(
@@ -194,7 +194,7 @@ def incremental_train(
             task_accuracies[eval_task].append(test_accuracy)
 
             if eval_task == task:  # Only log the current task's performance
-                if config["use_wandb"]:
+                if config["training"]["use_wandb"]:
                     wandb.log(
                         {
                             f"train_accuracy_task_{task+1}": epoch_acc,
@@ -213,7 +213,7 @@ def incremental_train(
     for task, accuracies in task_accuracies.items():
         results[f"task_{task+1}_accuracy"] = accuracies
 
-    if config["use_wandb"]:
+    if config["training"]["use_wandb"]:
         wandb.finish()
 
     return results, task_train_accuracies, task_accuracies

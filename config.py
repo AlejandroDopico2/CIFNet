@@ -60,6 +60,7 @@ def get_continual_config(args: argparse.Namespace) -> Dict[str, Any]:
         "buffer_size": args.buffer_size,
         "patience": 3,  # TODO: Make an argument.
         "use_eb": args.use_eb,
+        "sampling_strategy": args.sampling_strategy,
     }
 
     return config

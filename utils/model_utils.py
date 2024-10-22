@@ -40,11 +40,11 @@ def build_model(config: Dict[str, Any]) -> nn.Module:
 
 
 def build_incremental_model(config: Dict[str, Any]) -> nn.Module:
-    in_channels = 1 if config["dataset"] == "MNIST" else 3
+    in_channels = 1 if config["dataset"]["name"] == "MNIST" else 3
 
-    if config["backbone"]:
+    if config["model"]["backbone"]:
         backbone = get_backbone_class(
-            "models.backbone", config["backbone"] + "Backbone"
+            "models.backbone", config["model"]["backbone"] + "Backbone"
         )
     else:
         backbone = None
@@ -52,16 +52,15 @@ def build_incremental_model(config: Dict[str, Any]) -> nn.Module:
     model = RolanNET(
         num_classes=0,
         activation="logs",
-        lamb=config["rolann_lamb"],
-        pretrained=config["pretrained"],
+        lamb=config["rolann"]["rolann_lamb"],
+        pretrained=config["model"]["pretrained"],
         backbone=backbone,
         in_channels=in_channels,
-        sparse=config["sparse"],
-        dropout_rate=config["dropout_rate"],
+        sparse=config["rolann"]["sparse"],
+        dropout_rate=config["rolann"]["dropout_rate"],
         device=config["device"],
         incremental=True,
-        freeze_mode=config["freeze_mode"],
-        freeze_rolann=config["freeze_rolann"],
+        freeze_mode=config["model"]["freeze_mode"],
     ).to(config["device"])
 
     return model

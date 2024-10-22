@@ -3,13 +3,36 @@ from loguru import logger
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Subset, TensorDataset, ConcatDataset
+from torch.utils.data import DataLoader, Subset, TensorDataset
 from tqdm import tqdm
+from models.samplers.SamplingStrategy import (
+    BoundarySampling,
+    CentroidSampling,
+    EntropySampling,
+    HybridSampling,
+    KMeansSampling,
+    RandomSampling,
+    TypicalitySampling,
+)
 from utils.incremental_data_utils import prepare_data
-from models.MemoryReplayBuffer import MemoryReplayBuffer
+from models.samplers.MemoryReplayBuffer import MemoryReplayBuffer
 from models.rolannet import RolanNET
 from scripts.test import evaluate
 from utils.utils import split_dataset
+
+sampling_strategies = {
+    "centroid": CentroidSampling,
+    "entropy": EntropySampling,
+    "kmeans": KMeansSampling,
+    "random": RandomSampling,
+    "typicality": TypicalitySampling,
+    "boundary": BoundarySampling,
+    "hybrid": HybridSampling,
+}
+
+
+def get_sampling_strategy(strategy_name):
+    return sampling_strategies.get(strategy_name.lower(), RandomSampling)
 
 
 def train_step(
@@ -48,6 +71,12 @@ def train_step(
     return total_correct, total_samples, batch_count, running_loss
 
 
+def embedding_step(model, embeddings, labels, classes):
+
+    labels = process_labels(labels)
+    model.update_rolann(embeddings, labels, classes=classes, is_embedding=True)
+
+
 def train_ExpansionBuffer(
     model: RolanNET,
     train_dataset: Subset,
@@ -63,19 +92,23 @@ def train_ExpansionBuffer(
     )
 
     device = config["device"]
-    classes_per_task = config["classes_per_task"]
-    samples_per_task = config["samples_per_task"]
-    buffer_batch_size = config["buffer_size"]
+    classes_per_task = config["incremental"]["classes_per_task"]
+    samples_per_task = config["incremental"]["samples_per_task"]
+    buffer_batch_size = config["incremental"]["buffer_size"]
 
     criterion = nn.CrossEntropyLoss()
     optimizer = (
-        optim.Adam(model.parameters(), lr=config["learning_rate"], weight_decay=1e-5)
-        if model.backbone and not config["freeze_mode"] == "all"
+        optim.Adam(model.parameters(), lr=config["model"]["learning_rate"], weight_decay=1e-5)
+        if model.backbone and not config["model"]["freeze_mode"] == "all"
         else None
     )
 
+    sampling_strategy = get_sampling_strategy(config["incremental"]["sampling_strategy"])
+
     replayBuffer = MemoryReplayBuffer(
-        memory_size_per_class=buffer_batch_size, classes_per_task=classes_per_task
+        memory_size_per_class=buffer_batch_size,
+        classes_per_task=classes_per_task,
+        sampling_strategy=sampling_strategy(),
     )
 
     results: Dict[str, List[float]] = {
@@ -86,18 +119,18 @@ def train_ExpansionBuffer(
     }
 
     task_accuracies: Dict[int, List[float]] = {
-        i: [] for i in range(config["num_tasks"])
+        i: [] for i in range(config["incremental"]["num_tasks"])
     }
 
     task_train_accuracies: Dict[int, float] = {}
 
-    if config["use_wandb"]:
+    if config["training"]["use_wandb"]:
         import wandb
 
         wandb.init(project="RolanNet-Model", config=config)
         wandb.watch(model)
 
-    for task in range(config["num_tasks"]):
+    for task in range(config["incremental"]["num_tasks"]):
 
         logger.info(
             f"Training on classes {task*classes_per_task} to {(task+1)*classes_per_task - 1}"
@@ -116,19 +149,19 @@ def train_ExpansionBuffer(
             samples_per_task=samples_per_task,
         )
 
-        if model.backbone and not config["freeze_mode"] == "all":
+        if model.backbone and not config["model"]["freeze_mode"] == "all":
             global_train_loader, val_loader = split_dataset(
                 train_subset=train_subset, config=config
             )
         else:
             global_train_loader = DataLoader(
-                train_subset, batch_size=config["batch_size"], shuffle=True
+                train_subset, batch_size=config["dataset"]["batch_size"], shuffle=True
             )
 
-        num_epochs = config["epochs"] if not config["freeze_mode"] == "all" else 1
+        num_epochs = config["training"]["epochs"] if not config["model"]["freeze_mode"] == "all" else 1
 
         best_val_loss = float("inf")
-        patience = config["patience"]
+        patience = config["training"]["patience"]
         patience_counter = 0
 
         for epoch in range(num_epochs):
@@ -144,10 +177,10 @@ def train_ExpansionBuffer(
                 global_train_loader,
                 desc=f"Task {task+1} Global Train, Epoch {epoch + 1}",
             ):
-
                 inputs, labels = inputs.to(device), labels.to(device)
 
-                replayBuffer.add_task_samples(inputs, labels, task=task)
+                embeddings = model.backbone(inputs)
+                replayBuffer.add_task_samples(embeddings, labels, task=task)
 
                 labels = torch.nn.functional.one_hot(
                     labels, num_classes=current_num_classes
@@ -166,14 +199,14 @@ def train_ExpansionBuffer(
                     classes=None,
                 )
 
-            x_memory, y_memory = replayBuffer.get_past_tasks_samples(
-                task, batch_size=None
-            )
+            replayBuffer.sample(get_predictions=model.rolann, device=device)
+
+            x_memory, y_memory = replayBuffer.get_memory_samples(batch_size=None)
 
             if x_memory.size(0) > 0:
                 past_task_dataset = TensorDataset(x_memory, y_memory)
                 local_train_loader = DataLoader(
-                    past_task_dataset, batch_size=config["batch_size"], shuffle=True
+                    past_task_dataset, batch_size=config["dataset"]["batch_size"], shuffle=True
                 )
 
                 for inputs, labels in tqdm(
@@ -183,25 +216,15 @@ def train_ExpansionBuffer(
 
                     inputs, labels = inputs.to(device), labels.to(device)
 
-                    replayBuffer.add_task_samples(inputs, labels, task=task)
-
                     labels = torch.nn.functional.one_hot(
                         labels, num_classes=current_num_classes
                     )
 
-                    total_correct, total_samples, batch_count, running_loss = (
-                        train_step(
-                            model,
-                            inputs,
-                            labels,
-                            criterion,
-                            optimizer,
-                            total_correct,
-                            total_samples,
-                            batch_count,
-                            running_loss,
-                            classes=class_range,
-                        )
+                    embedding_step(
+                        model,
+                        inputs,
+                        labels,
+                        classes=class_range,
                     )
 
             epoch_loss = running_loss / batch_count
@@ -213,7 +236,7 @@ def train_ExpansionBuffer(
 
             task_train_accuracies[task] = epoch_acc
 
-            if model.backbone and not config["freeze_mode"] == "all":
+            if model.backbone and not config["model"]["freeze_mode"] == "all":
                 val_loss, val_accuracy = evaluate(
                     model,
                     val_loader,
@@ -239,11 +262,11 @@ def train_ExpansionBuffer(
                 class_range=range(
                     eval_task * classes_per_task, (eval_task + 1) * classes_per_task
                 ),
-                samples_per_task=config["samples_per_task"],
+                samples_per_task=None,
             )
 
             test_loader = DataLoader(
-                test_subset, batch_size=config["batch_size"], shuffle=True
+                test_subset, batch_size=config["dataset"]["batch_size"], shuffle=True
             )
 
             test_loss, test_accuracy = evaluate(
@@ -259,7 +282,7 @@ def train_ExpansionBuffer(
             if (
                 eval_task == task and epoch == num_epochs - 1
             ):  # Only log the current task's performance
-                if config["use_wandb"]:
+                if config["training"]["use_wandb"]:
                     wandb.log(
                         {
                             f"train_accuracy_task_{task+1}": epoch_acc,
@@ -274,14 +297,19 @@ def train_ExpansionBuffer(
                 results["test_loss"].append(test_loss)
                 results["test_accuracy"].append(test_accuracy)
 
+        logger.debug(
+            f"Memory buffer distribution: {replayBuffer.get_class_distribution()}"
+        )
+
     logger.info(
         f"\nMemory buffer distribution: {replayBuffer.get_class_distribution()}"
     )
 
-    if config["use_wandb"]:
+    if config["training"]["use_wandb"]:
         wandb.finish()
 
     return results, task_train_accuracies, task_accuracies
+
 
 def process_labels(labels: torch.Tensor) -> torch.Tensor:
     return labels * 0.9 + 0.05

@@ -33,6 +33,7 @@ class ResNetBackbone(Backbone):
                 1, 64, kernel_size=7, stride=2, padding=3, bias=False
             )
 
+
 class SmallResNetBackbone(Backbone):
     def __init__(self, pretrained: bool = True):
         super(SmallResNetBackbone, self).__init__()
@@ -43,7 +44,14 @@ class SmallResNetBackbone(Backbone):
         )
         self.model.fc = nn.Identity()  # Remove the final fully connected layer
 
-        self.model.conv1 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, stride=1, padding=1, bias=False)
+        self.model.conv1 = nn.Conv2d(
+            in_channels=3,
+            out_channels=64,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
+        )
 
     def set_input_channels(self, channels: int):
         if channels == 1:

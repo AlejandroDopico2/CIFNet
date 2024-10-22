@@ -8,7 +8,7 @@ import numpy as np
 from scripts.train import train
 from utils.data_utils import get_datasets, get_transforms
 from utils.model_utils import build_model
-from utils.plotting import plot_results, plot_task_accuracies
+from utils.plotting import plot_task_accuracies
 from config import get_batch_config
 
 # Set up loguru logger
@@ -56,13 +56,7 @@ def parse_args() -> argparse.Namespace:
     model_group.add_argument(
         "--backbone",
         type=str,
-        choices=[
-            "ResNet",
-            "MobileNet",
-            "DenseNet",
-            "Custom",
-            "SmallResNet"
-        ],
+        choices=["ResNet", "MobileNet", "DenseNet", "Custom", "SmallResNet"],
         required=False,
         help="Backbone model type (e.g., ResNet, MobileNet).",
     )

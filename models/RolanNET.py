@@ -88,9 +88,13 @@ class RolanNET(nn.Module):
 
     @torch.no_grad
     def update_rolann(
-        self, x: torch.Tensor, labels: torch.Tensor, classes: Optional[int] = None
+        self,
+        x: torch.Tensor,
+        labels: torch.Tensor,
+        classes: Optional[int] = None,
+        is_embedding: bool = False,
     ) -> None:
-        if self.backbone:
+        if self.backbone and not is_embedding:
             x = x.to(self.device)
             x = self.backbone(x).squeeze()
 

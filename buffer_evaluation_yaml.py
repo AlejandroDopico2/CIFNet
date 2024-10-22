@@ -1,10 +1,11 @@
 import argparse
 import os
-from time import time
+from time import strftime, time
 import numpy as np
 from matplotlib import pyplot as plt
 from loguru import logger
-from incremental_main_argparse import main
+import yaml
+from incremental_main import main
 
 logger.remove()
 logger.add(
@@ -13,38 +14,32 @@ logger.add(
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
 )
 
+def load_config(yaml_path):
+    with open(yaml_path, "r") as file:
+        return yaml.safe_load(file)
 
-def run_multiple_mains(buffer_sizes, num_runs=2):
-    args = argparse.Namespace(
-        dataset="MNIST",
-        backbone="ResNet",
-        pretrained=True,
-        freeze_mode="all",
-        batch_size=300,
-        epochs=1,
-        learning_rate=0.001,
-        rolann_lamb=0.01,
-        dropout_rate=0.0,
-        sparse=False,
-        num_tasks=5,
-        classes_per_task=2,
-        initial_tasks=1,
-        use_eb=True,
-        use_wandb=False,
-        samples_per_task=None,
-        freeze_rolann=False,
-        sampling_strategy = "centroid"
-    )
+def create_output_directory(yaml_path):
+    filename = os.path.basename(yaml_path).split('.')[0]
+    
+    dataset, strategy = filename.split('_')
+    
+    date_str = strftime("%m_%d")
+    output_dir = os.path.join("experiments", f"experiments_{date_str}", f"{dataset}_{strategy}")
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    return output_dir
 
+def run_multiple_mains(config, buffer_sizes, output_dir, num_runs=2):
     results = []
     for buffer_size in buffer_sizes:
         buffer_results = []
         logger.info(f"Starting tests with buffer_size {buffer_size}")
 
         for run in range(num_runs):
-            args.buffer_size = buffer_size
-            args.output_dir = os.path.join(
-                "centroid_evaluation",
+            config['incremental']['buffer_size'] = buffer_size
+            config['output_dir'] = os.path.join(
+                output_dir,
                 f"buffer_size_{buffer_size}_run_{run}",
             )
 
@@ -54,7 +49,7 @@ def run_multiple_mains(buffer_sizes, num_runs=2):
             start_time = time()
 
             try:
-                current_results = main(args)
+                current_results = main(config)
             except Exception as e:
                 logger.error(f"Error during execution: {e}")
                 continue
@@ -86,7 +81,7 @@ def run_multiple_mains(buffer_sizes, num_runs=2):
     return results
 
 
-def plot_results(results):
+def plot_results(results, output_dir):
     buffer_sizes = sorted(set(r[0]["buffer_size"] for r in results))
 
     metrics = [
@@ -131,7 +126,6 @@ def plot_results(results):
             means,
             yerr=stds,
             fmt="-o",
-            label="each_step=True",
             color="blue",
         )
 
@@ -141,18 +135,18 @@ def plot_results(results):
         axs[i].legend()
 
     plt.tight_layout()
-    plt.savefig(
-        os.path.join(
-            "experiments",
-            "experiments_10-07",
-            "buffer_evaluation",
-            "buffer_size_results_comparison.png",
-        )
-    )
+    result_path = os.path.join(output_dir, "buffer_size_results_comparison.png")
+    plt.savefig(result_path)
     logger.info("Results plotted and saved to buffer_size_results_comparison.png")
 
 
 if __name__ == "__main__":
+    yaml_path = "experiment_config/CIFAR10_random.yaml"
+    config = load_config(yaml_path)
+    
+    output_dir = create_output_directory(yaml_path)
+    
     buffer_sizes = range(100, 1501, 200)
-    results = run_multiple_mains(buffer_sizes, num_runs=1)
-    plot_results(results)
+    results = run_multiple_mains(config, buffer_sizes, output_dir, num_runs=1)
+    
+    plot_results(results, output_dir)

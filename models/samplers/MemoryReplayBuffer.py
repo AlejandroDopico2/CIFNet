@@ -1,62 +1,55 @@
-import random
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 import torch
-from collections import defaultdict, deque
+from collections import defaultdict
+
+from models.samplers import SamplingStrategy
 
 
 class MemoryReplayBuffer:
-    def __init__(self, classes_per_task: int, memory_size_per_class: Optional[int]):
-        self.buffer = defaultdict(lambda: deque(maxlen=memory_size_per_class))
+    def __init__(
+        self,
+        classes_per_task: int,
+        memory_size_per_class: Optional[int],
+        sampling_strategy: SamplingStrategy,
+    ):
+        self.buffer: Dict[int, List[torch.Tensor]] = defaultdict(list)
+        self.memory_size_per_class = memory_size_per_class
         self.class_count = 0
         self.classes_per_task = classes_per_task
+        self.sampling_strategy = sampling_strategy
 
     def add_task_samples(self, x: torch.Tensor, y: torch.Tensor, task: int) -> None:
-        x_cpu = x.cpu()
-
         current_classes = set(
             range(self.classes_per_task * task, (task + 1) * self.classes_per_task)
         )
 
-        for i, label in enumerate(y):
+        for sample, label in zip(x, y):
             label_item = label.item()
 
             if label_item not in current_classes:
                 continue
 
-            self.buffer[label_item].append((x_cpu[i], label))
+            self.buffer[label_item].append(sample.cpu())
             if label >= self.class_count:
                 self.class_count = label_item + 1
+
+    def sample(self, **kwargs):
+        for label, samples in self.buffer.items():
+            if not isinstance(self.buffer[label], torch.Tensor):
+                self.buffer[label] = torch.stack(samples)
+
+        self.buffer = self.sampling_strategy.sample(
+            buffer=self.buffer, n_samples=self.memory_size_per_class, **kwargs
+        )
 
     def get_memory_samples(self, batch_size: int = None) -> Tuple[torch.Tensor]:
         x_memory, y_memory = [], []
 
-        if self.class_count == 0:
-            return torch.empty(0), torch.empty(0)
+        for label, samples in self.buffer.items():
+            x_memory.extend(samples)
+            y_memory.extend([label] * len(samples))
 
-        if batch_size is None:
-            for samples in self.buffer.values():
-                x_memory.extend([x for x, _ in samples])
-                y_memory.extend([y for _, y in samples])
-        else:
-            samples_per_class = max(1, (batch_size // self.class_count))
-            for samples in self.buffer.values():
-                if len(samples) > 0:
-                    sampled = random.sample(
-                        samples, min(samples_per_class, len(samples))
-                    )
-                    x_memory.extend([x for x, _ in sampled])
-                    y_memory.extend([y for _, y in sampled])
-
-        if x_memory:  # Check if the list is not empty
-            x_memory = torch.stack(x_memory)
-            y_memory = torch.stack(y_memory)
-            if self.class_count is not None:
-                y_memory = self._expand_one_hot(y_memory, self.class_count)
-        else:
-            x_memory = torch.empty(0)
-            y_memory = torch.empty(0)
-
-        return x_memory, y_memory
+        return torch.stack(x_memory), torch.LongTensor(y_memory)
 
     def get_past_tasks_samples(
         self, task_id: int, batch_size: Optional[int] = None
@@ -91,12 +84,12 @@ class MemoryReplayBuffer:
             num_classes = self.class_count
         return torch.nn.functional.one_hot(labels, num_classes=num_classes).float()
 
-    def _expand_one_hot(self, one_hot: torch.Tensor, num_classes: int):
-        current_classes = one_hot.size(1)
+    def _expand_one_hot(self, y: torch.Tensor, num_classes: int):
+        current_classes = y.unique().size(0)
         if num_classes > current_classes:
-            padding = torch.full((one_hot.size(0), num_classes - current_classes), 0.05)
-            return torch.cat([one_hot, padding], dim=1)
-        return one_hot
+            padding = torch.full((y.size(0), num_classes - current_classes), 0.05)
+            return torch.cat([y, padding], dim=1)
+        return y
 
     def get_class_distribution(self):
         return {label: len(samples) for label, samples in self.buffer.items()}
