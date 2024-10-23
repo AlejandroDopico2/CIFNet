@@ -1,9 +1,10 @@
+from collections import defaultdict
 from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Subset, TensorDataset
+from torch.utils.data import DataLoader, Subset, TensorDataset, ConcatDataset
 from tqdm import tqdm
 from models.samplers.SamplingStrategy import (
     BoundarySampling,
@@ -70,6 +71,93 @@ def train_step(
 
     return total_correct, total_samples, batch_count, running_loss
 
+def replicate_samples(inputs, labels, desired_size):
+
+    if isinstance(inputs, (list, torch.Tensor)):
+        num_samples = len(inputs)
+    else:
+        raise TypeError("inputs must be a list or torch.Tensor")
+
+    if num_samples == 0:
+        raise ValueError("inputs cannot be empty")
+    
+    if num_samples != len(labels):
+        raise ValueError("inputs and labels must have the same length")
+    
+    class_to_inputs = defaultdict(list)
+    class_to_labels = defaultdict(list)
+
+    # Group inputs and labels by class
+    for i, label in enumerate(labels):
+        class_to_inputs[int(label)].append(inputs[i])
+        class_to_labels[int(label)].append(label)
+    
+    inputs_new = []
+    labels_new = []
+    
+    for label in class_to_inputs:
+        class_inputs = class_to_inputs[label]
+        class_labels = class_to_labels[label]
+        num_class_samples = len(class_inputs)
+        
+        # Calculate repetitions and remainder for this class
+        repetitions = desired_size // num_class_samples
+        remainder = desired_size % num_class_samples
+        
+        # Replicate inputs and labels for this class
+        if isinstance(inputs, list):
+            replicated_inputs = class_inputs * repetitions + class_inputs[:remainder]
+            replicated_labels = class_labels * repetitions + class_labels[:remainder]
+        
+        elif isinstance(inputs, torch.Tensor):
+            replicated_inputs = torch.cat([torch.stack(class_inputs)] * repetitions + [torch.stack(class_inputs)[:remainder]], dim=0)
+            replicated_labels = torch.cat([torch.stack(class_labels)] * repetitions + [torch.stack(class_labels)[:remainder]], dim=0)
+        
+        # Add the replicated data to the new dataset
+        inputs_new.extend(replicated_inputs) if isinstance(inputs, list) else inputs_new.append(replicated_inputs)
+        labels_new.extend(replicated_labels) if isinstance(inputs, list) else labels_new.append(replicated_labels)
+    
+    # If inputs are tensors, concatenate them into a single tensor
+    if isinstance(inputs, torch.Tensor):
+        inputs_new = torch.cat(inputs_new, dim=0)
+        labels_new = torch.cat(labels_new, dim=0)
+    
+    return inputs_new, labels_new
+
+def count_samples_per_class(dataloader):
+    """
+    Count the total number of samples per class in a DataLoader.
+
+    Parameters:
+        dataloader (torch.utils.data.DataLoader): DataLoader object containing the dataset.
+    
+    Returns:
+        class_counts (dict): Dictionary with class labels as keys and sample counts as values.
+    """
+    
+    class_counts = defaultdict(int)  # Initialize a dictionary with default int (0)
+    
+    # Iterate through the DataLoader
+    for _, labels in dataloader:
+        for label in labels:
+            class_counts[int(label)] += 1  # Convert label to int and count
+    
+    return dict(class_counts)
+
+def log_samples_per_class(Y):
+    """
+    Logs the number of samples per class from a given label array Y.
+    
+    Parameters:
+        Y: numpy array or list of class labels.
+    """
+    
+    # Count the occurrences of each class
+    unique_classes, counts = torch.unique(Y, return_counts=True)
+    
+    # Log the results
+    for cls, count in zip(unique_classes, counts):
+        logger.debug(f"Class {cls}: {count} samples")
 
 def embedding_step(model, embeddings, labels, classes):
 
@@ -166,21 +254,28 @@ def train_ExpansionBuffer(
 
         for epoch in range(num_epochs):
 
+            training_classes = range(0, (task + 1) * classes_per_task) if task != 0 else range(classes_per_task)
+
+            ## CURRENT TASK TRAINING
+
             model.train()
 
             running_loss = 0.0
             total_correct = 0
             total_samples = 0
             batch_count = 0
+            
+            logger.debug(f"Training current task in neurons {training_classes}")
 
             for inputs, labels in tqdm(
                 global_train_loader,
                 desc=f"Task {task+1} Global Train, Epoch {epoch + 1}",
             ):
+                
                 inputs, labels = inputs.to(device), labels.to(device)
 
-                embeddings = model.backbone(inputs)
-                replayBuffer.add_task_samples(embeddings, labels, task=task)
+                # embeddings = model.backbone(inputs)
+                replayBuffer.add_task_samples(inputs, labels, task=task)
 
                 labels = torch.nn.functional.one_hot(
                     labels, num_classes=current_num_classes
@@ -196,18 +291,55 @@ def train_ExpansionBuffer(
                     total_samples,
                     batch_count,
                     running_loss,
-                    classes=None,
+                    classes=training_classes,
                 )
+
+            epoch_loss = running_loss / batch_count
+            epoch_acc = (total_correct / total_samples).item()
+
+            logger.info(
+                f"Gloabl Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}"
+            )
+
+            ## BUFFER REPLAY TRAINING
 
             replayBuffer.sample(get_predictions=model.rolann, device=device)
 
-            x_memory, y_memory = replayBuffer.get_memory_samples(batch_size=None)
+            X_memory, Y_memory = replayBuffer.get_memory_samples(classes=range(task * classes_per_task))
 
-            if x_memory.size(0) > 0:
-                past_task_dataset = TensorDataset(x_memory, y_memory)
-                local_train_loader = DataLoader(
-                    past_task_dataset, batch_size=config["dataset"]["batch_size"], shuffle=True
+            if X_memory.size(0) > 0 and task != 0:
+
+                log_samples_per_class(Y_memory)
+
+                class_counts = count_samples_per_class(global_train_loader)
+
+                logger.debug(f"Replicating to size {max(class_counts.values())}")
+                
+                X_replicated, Y_replicated = replicate_samples(X_memory, Y_memory, max(class_counts.values()))
+
+                log_samples_per_class(Y_replicated)
+
+                past_task_dataset = TensorDataset(X_replicated, Y_replicated)
+
+                train_subset = prepare_data(
+                    train_dataset,
+                    class_range=class_range,
+                    samples_per_task=samples_per_task,
                 )
+
+                concatenated_dataset = ConcatDataset([past_task_dataset, train_subset])
+                local_train_loader = DataLoader(
+                    concatenated_dataset, batch_size=config["dataset"]["batch_size"], shuffle=True
+                )
+
+                logger.debug(count_samples_per_class(local_train_loader))
+
+                logger.debug(f"Making the local train in the neurons {class_range}")
+                
+                running_loss = 0.0
+                total_correct = 0
+                total_samples = 0
+                batch_count = 0
 
                 for inputs, labels in tqdm(
                     local_train_loader,
@@ -220,19 +352,25 @@ def train_ExpansionBuffer(
                         labels, num_classes=current_num_classes
                     )
 
-                    embedding_step(
+                    total_correct, total_samples, batch_count, running_loss = train_step(
                         model,
                         inputs,
                         labels,
+                        criterion,
+                        optimizer,
+                        total_correct,
+                        total_samples,
+                        batch_count,
+                        running_loss,
                         classes=class_range,
                     )
 
-            epoch_loss = running_loss / batch_count
-            epoch_acc = (total_correct / total_samples).item()
+                epoch_loss = running_loss / batch_count
+                epoch_acc = (total_correct / total_samples).item()
 
-            logger.info(
-                f"Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}"
-            )
+                logger.info(
+                    f"New Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}"
+                )
 
             task_train_accuracies[task] = epoch_acc
 

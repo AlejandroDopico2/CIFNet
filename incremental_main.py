@@ -42,7 +42,8 @@ def parse_args() -> argparse.Namespace:
 
 def main(config=None) -> Dict[str, Union[float, str]]:
     if config is None:
-        config = load_yaml_config(config.config_path)
+        args = parse_args()
+        config = load_yaml_config(args.config_path)
 
 
     # Logging parsed arguments
