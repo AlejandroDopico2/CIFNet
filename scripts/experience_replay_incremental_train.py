@@ -254,7 +254,7 @@ def train_ExpansionBuffer(
 
         for epoch in range(num_epochs):
 
-            training_classes = range(0, (task + 1) * classes_per_task) if task != 0 else range(classes_per_task)
+            training_classes = range(0, task * classes_per_task) if task != 0 else range(classes_per_task)
 
             ## CURRENT TASK TRAINING
 
