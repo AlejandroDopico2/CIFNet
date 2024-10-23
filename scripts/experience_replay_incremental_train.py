@@ -40,20 +40,24 @@ def train_step(
     model: RolanNET,
     inputs: Subset,
     labels: Subset,
-    criterion: nn.Module,
-    optimizer: nn.Module,
-    total_correct: int,
-    total_samples: int,
-    batch_count: int,
-    running_loss: float,
     classes: Optional[List[int]],
-) -> Tuple[int, int, int, int]:
+    criterion: Optional[nn.Module] = None,
+    optimizer: Optional[nn.Module] = None,
+    calculate_metrics: bool = False,
+    total_correct: Optional[int] = None,
+    total_samples: Optional[int] = None,
+    batch_count: Optional[int] = None,
+    running_loss: Optional[float] = None,
+) -> Optional[Tuple[int, int, int, int]]:
 
     labels = process_labels(labels)
 
     model.update_rolann(inputs, labels, classes=classes)
     outputs = model(inputs)
-
+    
+    if not calculate_metrics:
+        return None
+    
     loss = criterion(outputs, torch.argmax(labels, dim=1))
 
     if optimizer:
@@ -280,26 +284,39 @@ def train_ExpansionBuffer(
                 labels = torch.nn.functional.one_hot(
                     labels, num_classes=current_num_classes
                 )
+                
+                if task == 0:
+                    total_correct, total_samples, batch_count, running_loss = train_step(
+                        model,
+                        inputs,
+                        labels,
+                        classes=class_range,
+                        criterion=criterion,
+                        optimizer=optimizer,
+                        total_correct=total_correct,
+                        total_samples=total_samples,
+                        batch_count=batch_count,
+                        running_loss=running_loss,
+                        calculate_metrics=True
+                    )
+                else:
+                    train_step(
+                        model,
+                        inputs,
+                        labels,
+                        classes=training_classes,
+                        calculate_metrics=False
+                    )
 
-                total_correct, total_samples, batch_count, running_loss = train_step(
-                    model,
-                    inputs,
-                    labels,
-                    criterion,
-                    optimizer,
-                    total_correct,
-                    total_samples,
-                    batch_count,
-                    running_loss,
-                    classes=training_classes,
+            if task == 0:
+                epoch_loss = running_loss / batch_count
+                epoch_acc = (total_correct / total_samples).item()
+
+                logger.info(
+                    f"New Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}"
                 )
 
-            epoch_loss = running_loss / batch_count
-            epoch_acc = (total_correct / total_samples).item()
-
-            logger.info(
-                f"Gloabl Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}"
-            )
+                task_train_accuracies[task] = epoch_acc
 
             ## BUFFER REPLAY TRAINING
 
@@ -309,15 +326,15 @@ def train_ExpansionBuffer(
 
             if X_memory.size(0) > 0 and task != 0:
 
-                log_samples_per_class(Y_memory)
+                # log_samples_per_class(Y_memory)
 
                 class_counts = count_samples_per_class(global_train_loader)
 
-                logger.debug(f"Replicating to size {max(class_counts.values())}")
+                # logger.debug(f"Replicating to size {max(class_counts.values())}")
                 
                 X_replicated, Y_replicated = replicate_samples(X_memory, Y_memory, max(class_counts.values()))
 
-                log_samples_per_class(Y_replicated)
+                # log_samples_per_class(Y_replicated)
 
                 past_task_dataset = TensorDataset(X_replicated, Y_replicated)
 
@@ -332,7 +349,7 @@ def train_ExpansionBuffer(
                     concatenated_dataset, batch_size=config["dataset"]["batch_size"], shuffle=True
                 )
 
-                logger.debug(count_samples_per_class(local_train_loader))
+                # logger.debug(count_samples_per_class(local_train_loader))
 
                 logger.debug(f"Making the local train in the neurons {class_range}")
                 
@@ -356,13 +373,14 @@ def train_ExpansionBuffer(
                         model,
                         inputs,
                         labels,
-                        criterion,
-                        optimizer,
-                        total_correct,
-                        total_samples,
-                        batch_count,
-                        running_loss,
+                        criterion=criterion,
+                        optimizer=optimizer,
+                        total_correct=total_correct,
+                        total_samples=total_samples,
+                        batch_count=batch_count,
+                        running_loss=running_loss,
                         classes=class_range,
+                        calculate_metrics=True
                     )
 
                 epoch_loss = running_loss / batch_count
@@ -372,7 +390,7 @@ def train_ExpansionBuffer(
                     f"New Task {task+1} Epoch {epoch + 1}, Loss: {epoch_loss}, Accuracy: {100 * epoch_acc}"
                 )
 
-            task_train_accuracies[task] = epoch_acc
+                task_train_accuracies[task] = epoch_acc
 
             if model.backbone and not config["model"]["freeze_mode"] == "all":
                 val_loss, val_accuracy = evaluate(
@@ -430,8 +448,8 @@ def train_ExpansionBuffer(
                         }
                     )
 
-                results["train_loss"].append(epoch_loss)
-                results["train_accuracy"].append(epoch_acc)
+                # results["train_loss"].append(epoch_loss)
+                # results["train_accuracy"].append(epoch_acc)
                 results["test_loss"].append(test_loss)
                 results["test_accuracy"].append(test_accuracy)
 

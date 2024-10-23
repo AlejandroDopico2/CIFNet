@@ -1,0 +1,27 @@
+:dataset:
+  name: MNIST
+  batch_size: 256
+model:
+  backbone: ResNet
+  pretrained: true
+  learning_rate: 0.001
+  freeze_mode: all
+rolann:
+  rolann_lamb: 0.01
+  sparse: false
+  dropout_rate: 0.0
+  freeze_rolann: false
+incremental:
+  num_tasks: 5
+  classes_per_task: 2
+  initial_tasks: 1
+  samples_per_task: null
+  buffer_size: 250
+  use_eb: true
+  sampling_strategy: random
+training:
+  epochs: 10
+  use_wandb: false
+  patience: null
+output_dir: "."
+device: "cuda"

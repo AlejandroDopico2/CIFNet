@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
-import random
 
 import numpy as np
 from scipy.stats import entropy
@@ -8,8 +7,6 @@ from sklearn.cluster import KMeans
 from sklearn.neighbors import NearestNeighbors
 import torch
 import torch.nn.functional as F
-
-from imblearn.over_sampling import SMOTE
 
 def add_gaussian_noise(embeddings, mean=0.0, std=0.01):
     noise = torch.normal(mean=mean, std=std, size=embeddings.shape)
