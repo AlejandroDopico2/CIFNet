@@ -1,6 +1,6 @@
 dataset:
   name: CIFAR10
-  batch_size: 64
+  batch_size: 256
 model:
   backbone: ResNet
   pretrained: true
@@ -12,11 +12,11 @@ rolann:
   dropout_rate: 0.0
   freeze_rolann: false
 incremental:
-  num_tasks: 5
-  classes_per_task: 2
+  num_tasks: 10
+  classes_per_task: 1
   initial_tasks: 1
   samples_per_task: null
-  buffer_size: 250
+  buffer_size: 500
   use_eb: true
   sampling_strategy: random
 training:

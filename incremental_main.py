@@ -148,6 +148,7 @@ def main(config=None) -> Dict[str, Union[float, str]]:
     # logger.info(f"Results appended to: {csv_path}")
     logger.info(f"Detailed results saved to: {dir_path}")
 
+    task_train_accuracies = None
     # Plotting task accuracies
     plot_task_accuracies(
         task_train_accuracies, task_accuracies, config["incremental"]["num_tasks"], save_path=plot_path

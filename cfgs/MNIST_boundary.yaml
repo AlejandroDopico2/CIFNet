@@ -16,9 +16,9 @@ incremental:
   classes_per_task: 2
   initial_tasks: 1
   samples_per_task: null
-  buffer_size: 250
+  buffer_size: 1000
   use_eb: true
-  sampling_strategy: random
+  sampling_strategy: boundary
 training:
   epochs: 10
   use_wandb: false

@@ -1,5 +1,5 @@
 dataset:
-  name: MNIST
+  name: CIFAR100
   batch_size: 256
 model:
   backbone: ResNet
@@ -12,8 +12,8 @@ rolann:
   dropout_rate: 0.0
   freeze_rolann: false
 incremental:
-  num_tasks: 5
-  classes_per_task: 2
+  num_tasks: 20
+  classes_per_task: 5
   initial_tasks: 1
   samples_per_task: null
   buffer_size: 250
