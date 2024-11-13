@@ -22,9 +22,11 @@ logger.add(
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
 )
 
+
 def load_yaml_config(path: str) -> dict:
     with open(path, "r") as file:
         return yaml.safe_load(file)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -37,45 +39,57 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Path to the YAML configuration file.",
     )
-    
+
     return parser.parse_args()
+
 
 def main(config=None) -> Dict[str, Union[float, str]]:
     if config is None:
         args = parse_args()
         config = load_yaml_config(args.config_path)
 
-
     # Logging parsed arguments
     logger.info(f"Device: {config['device']}")
-    logger.info("="*50)
+    logger.info("=" * 50)
     logger.info(f"Dataset: {config['dataset']['name']}")
     logger.info(f"Batch Size: {config['dataset']['batch_size']}")
     logger.info(f"Epochs: {config['training']['epochs']}")
     logger.info(f"Learning Rate: {config['model']['learning_rate']:.6f}")
-    logger.info("="*50)
-    logger.info(f"Backbone: {config['model']['backbone'] or 'None'} "
-                f"({'Pretrained' if config['model']['pretrained'] else 'Not Pretrained'}) | "
-                f"Freeze Mode: {config['model']['freeze_mode']}")
-    logger.info("="*50)
-    logger.info(f"ROLANN Lambda: {config['rolann']['rolann_lamb']:.4f} "
-                f"{'(Frozen)' if config['rolann']['freeze_rolann'] else ''} | "
-                f"Dropout Rate: {config['rolann']['dropout_rate']:.2f} "
-                f"{'(Sparse Mode Enabled)' if config['rolann']['sparse'] else ''}")
-    logger.info("="*50)
-    logger.info(f"Incremental Learning Setup:")
+    logger.info("=" * 50)
+    logger.info(
+        f"Backbone: {config['model']['backbone'] or 'None'} "
+        f"({'Pretrained' if config['model']['pretrained'] else 'Not Pretrained'}) | "
+        f"Freeze Mode: {config['model']['freeze_mode']}"
+    )
+    logger.info("=" * 50)
+    logger.info(
+        f"ROLANN Lambda: {config['rolann']['rolann_lamb']:.4f} "
+        f"{'(Frozen)' if config['rolann']['freeze_rolann'] else ''} | "
+        f"Dropout Rate: {config['rolann']['dropout_rate']:.2f} "
+        f"{'(Sparse Mode Enabled)' if config['rolann']['sparse'] else ''}"
+    )
+    logger.info("=" * 50)
+    logger.info("Incremental Learning Setup:")
     logger.info(f" - Number of Tasks: {config['incremental']['num_tasks']}")
     logger.info(f" - Classes per Task: {config['incremental']['classes_per_task']}")
     logger.info(f" - Initial Tasks: {config['incremental']['initial_tasks']}")
-    logger.info(f" - Samples per Task: {config['incremental']['samples_per_task'] or 'All dataset'}")
+    logger.info(
+        f" - Samples per Task: {config['incremental']['samples_per_task'] or 'All dataset'}"
+    )
     logger.info(f" - Buffer Size: {config['incremental']['buffer_size'] or 'None'}")
-    logger.info(f" - Expansion Buffer: {'Enabled' if config['incremental']['use_eb'] else 'Disabled'}")
-    logger.info("="*50)
-    logger.info(f"Sampling Strategy: {config['incremental']['sampling_strategy'] or 'Default'}")
-    logger.info(f"Tracking with WandB: {'Enabled' if config['training']['use_wandb'] else 'Disabled'}")
+    logger.info(
+        f" - Expansion Buffer: {'Enabled' if config['incremental']['use_eb'] else 'Disabled'}"
+    )
+    logger.info("=" * 50)
+    logger.info(
+        f"Sampling Strategy: {config['incremental']['sampling_strategy'] or 'Default'}"
+    )
+    logger.info(
+        f"Tracking with WandB: {'Enabled' if config['training']['use_wandb'] else 'Disabled'}"
+    )
     logger.info(f"Output Directory: {config['output_dir']}")
 
-    flatten = True if config['model']['backbone'] is None else False
+    flatten = True if config["model"]["backbone"] is None else False
 
     transforms = get_transforms(config["dataset"]["name"], flatten)
 
@@ -127,12 +141,12 @@ def main(config=None) -> Dict[str, Union[float, str]]:
         **hyperparameters_to_save,
     }
 
-    Path(config['output_dir']).mkdir(exist_ok=True, parents=True)
+    Path(config["output_dir"]).mkdir(exist_ok=True, parents=True)
 
     filename = f"{config['dataset']['name']}_{config['model']['backbone']}"
-    plot_path = os.path.join(config['output_dir'], filename + "_plot.png")
+    plot_path = os.path.join(config["output_dir"], filename + "_plot.png")
 
-    dir_path = os.path.join(config['output_dir'], filename)
+    dir_path = os.path.join(config["output_dir"], filename)
 
     with open(dir_path + "_results.json", "w") as f:
         json.dump(log_data, f, indent=4)
@@ -151,7 +165,10 @@ def main(config=None) -> Dict[str, Union[float, str]]:
     task_train_accuracies = None
     # Plotting task accuracies
     plot_task_accuracies(
-        task_train_accuracies, task_accuracies, config["incremental"]["num_tasks"], save_path=plot_path
+        task_train_accuracies,
+        task_accuracies,
+        config["incremental"]["num_tasks"],
+        save_path=plot_path,
     )
     logger.info(f"Plot saved to: {plot_path}")
 

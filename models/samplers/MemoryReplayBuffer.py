@@ -42,16 +42,18 @@ class MemoryReplayBuffer:
             buffer=self.buffer, n_samples=self.memory_size_per_class, **kwargs
         )
 
-    def get_memory_samples(self, classes: Optional[List[int]] = None) -> Tuple[torch.Tensor]:
+    def get_memory_samples(
+        self, classes: Optional[List[int]] = None
+    ) -> Tuple[torch.Tensor]:
         x_memory, y_memory = [], []
 
         if classes:
             for label in classes:
                 if label not in self.buffer:
                     raise ValueError("Label specified not in the buffer.")
-                
+
                 x_memory.extend(self.buffer[label])
-                y_memory.extend([label] * len(self.buffer[label]))    
+                y_memory.extend([label] * len(self.buffer[label]))
         else:
             for label, samples in self.buffer.items():
                 x_memory.extend(samples)

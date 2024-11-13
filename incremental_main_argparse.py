@@ -185,33 +185,36 @@ def main(args=None) -> Dict[str, Union[float, str]]:
     # Logging parsed arguments
     logger.info(f"Experiment Name: {config['name']}")
     logger.info(f"Device: {config['device']}")
-    logger.info("="*50)
+    logger.info("=" * 50)
     logger.info(f"Dataset: {args.dataset}")
     logger.info(f"Batch Size: {args.batch_size}")
     logger.info(f"Epochs: {args.epochs}")
     logger.info(f"Learning Rate: {args.learning_rate:.6f}")
-    logger.info("="*50)
-    logger.info(f"Backbone: {args.backbone or 'None'} "
-                f"({'Pretrained' if args.pretrained else 'Not Pretrained'}) | "
-                f"Freeze Mode: {args.freeze_mode}")
-    logger.info("="*50)
-    logger.info(f"ROLANN Lambda: {args.rolann_lamb:.4f} "
-                f"{'(Frozen)' if args.freeze_rolann else ''} | "
-                f"Dropout Rate: {args.dropout_rate:.2f} "
-                f"{'(Sparse Mode Enabled)' if args.sparse else ''}")
-    logger.info("="*50)
-    logger.info(f"Incremental Learning Setup:")
+    logger.info("=" * 50)
+    logger.info(
+        f"Backbone: {args.backbone or 'None'} "
+        f"({'Pretrained' if args.pretrained else 'Not Pretrained'}) | "
+        f"Freeze Mode: {args.freeze_mode}"
+    )
+    logger.info("=" * 50)
+    logger.info(
+        f"ROLANN Lambda: {args.rolann_lamb:.4f} "
+        f"{'(Frozen)' if args.freeze_rolann else ''} | "
+        f"Dropout Rate: {args.dropout_rate:.2f} "
+        f"{'(Sparse Mode Enabled)' if args.sparse else ''}"
+    )
+    logger.info("=" * 50)
+    logger.info("Incremental Learning Setup:")
     logger.info(f" - Number of Tasks: {args.num_tasks}")
     logger.info(f" - Classes per Task: {args.classes_per_task}")
     logger.info(f" - Initial Tasks: {args.initial_tasks}")
     logger.info(f" - Samples per Task: {config['samples_per_task'] or 'All dataset'}")
     logger.info(f" - Buffer Size: {args.buffer_size or 'None'}")
     logger.info(f" - Expansion Buffer: {'Enabled' if args.use_eb else 'Disabled'}")
-    logger.info("="*50)
+    logger.info("=" * 50)
     logger.info(f"Sampling Strategy: {args.sampling_strategy or 'Default'}")
     logger.info(f"Tracking with WandB: {'Enabled' if args.use_wandb else 'Disabled'}")
     logger.info(f"Output Directory: {args.output_dir}")
-
 
     transforms = get_transforms(config["dataset"], config["flatten"])
 

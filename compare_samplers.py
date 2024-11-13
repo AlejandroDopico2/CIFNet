@@ -1,7 +1,6 @@
 import os
 import json
 import re
-import numpy as np
 from matplotlib import pyplot as plt
 import matplotlib.colors as mcolors
 from loguru import logger
@@ -13,23 +12,27 @@ logger.add(
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
 )
 
+
 def get_buffer_sizes(directory):
     """Función que extrae los tamaños de buffer desde los nombres de los subdirectorios."""
     buffer_sizes = []
     print(directory)
     for subdir in os.listdir(directory):
-        match = re.search(r'buffer_size_(\d+)', subdir)
+        match = re.search(r"buffer_size_(\d+)", subdir)
         if match:
             buffer_size = int(match.group(1))
             buffer_sizes.append(buffer_size)
     return sorted(buffer_sizes)
+
 
 def load_results(directory, buffer_sizes, metrics):
     results = {metric: [] for metric in metrics}
 
     for buffer_size in buffer_sizes:
         buffer_dir = os.path.join(directory, f"buffer_size_{buffer_size}_run_0")
-        result_file = os.path.join(buffer_dir, f"CIFAR10_resNet_results.json")  # Cambiar según tu esquema de nombres
+        result_file = os.path.join(
+            buffer_dir, "CIFAR10_resNet_results.json"
+        )  # Cambiar según tu esquema de nombres
 
         if not os.path.exists(result_file):
             logger.error(f"Results file not found: {result_file}")
@@ -47,12 +50,13 @@ def load_results(directory, buffer_sizes, metrics):
 
     return results
 
+
 def plot_comparative_results(directories, metrics, output_dir):
     fig, axs = plt.subplots(2, 1, figsize=(16, 9))
     axs = axs.ravel()
 
     print(mcolors.TABLEAU_COLORS)
-    colors = list(mcolors.TABLEAU_COLORS.keys())[:len(directories)]
+    colors = list(mcolors.TABLEAU_COLORS.keys())[: len(directories)]
     method_names = [os.path.basename(directory) for directory in directories]
 
     for i, metric in enumerate(metrics):
@@ -70,13 +74,13 @@ def plot_comparative_results(directories, metrics, output_dir):
 
             # Graficar los resultados de cada método con un color diferente
             axs[i].plot(
-                buffer_sizes[: len(valid_means)], 
-                valid_means, 
-                label=method_names[j], 
-                color=colors[j % len(colors)], 
-                marker='o'
+                buffer_sizes[: len(valid_means)],
+                valid_means,
+                label=method_names[j],
+                color=colors[j % len(colors)],
+                marker="o",
             )
-        
+
         axs[i].set_xlabel("Buffer Size")
         axs[i].set_ylabel(metric)
         axs[i].set_title(f"{metric} vs Buffer Size")
@@ -87,12 +91,15 @@ def plot_comparative_results(directories, metrics, output_dir):
     plt.savefig(result_path)
     logger.info(f"Comparative results plotted and saved to {result_path}")
 
+
 if __name__ == "__main__":
 
     experiments_dir = os.path.join("experiments", "experiments_10_22")
     directories = os.listdir(experiments_dir)
 
-    directories = [os.path.join(experiments_dir, method_dir) for method_dir in directories]
+    directories = [
+        os.path.join(experiments_dir, method_dir) for method_dir in directories
+    ]
 
     metrics = [
         "avg_forgetting",
@@ -101,5 +108,5 @@ if __name__ == "__main__":
 
     output_dir = os.path.join(experiments_dir, "comparative_experiments")
     os.makedirs(output_dir, exist_ok=True)
-    
+
     plot_comparative_results(directories, metrics, output_dir)

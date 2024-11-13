@@ -54,10 +54,10 @@ def train_step(
 
     model.update_rolann(inputs, labels, classes=classes)
     outputs = model(inputs)
-    
+
     if not calculate_metrics:
         return None
-    
+
     loss = criterion(outputs, torch.argmax(labels, dim=1))
 
     if optimizer:
@@ -75,6 +75,7 @@ def train_step(
 
     return total_correct, total_samples, batch_count, running_loss
 
+
 def replicate_samples(inputs, labels, desired_size):
 
     if isinstance(inputs, (list, torch.Tensor)):
@@ -84,10 +85,10 @@ def replicate_samples(inputs, labels, desired_size):
 
     if num_samples == 0:
         raise ValueError("inputs cannot be empty")
-    
+
     if num_samples != len(labels):
         raise ValueError("inputs and labels must have the same length")
-    
+
     class_to_inputs = defaultdict(list)
     class_to_labels = defaultdict(list)
 
@@ -95,38 +96,55 @@ def replicate_samples(inputs, labels, desired_size):
     for i, label in enumerate(labels):
         class_to_inputs[int(label)].append(inputs[i])
         class_to_labels[int(label)].append(label)
-    
+
     inputs_new = []
     labels_new = []
-    
+
     for label in class_to_inputs:
         class_inputs = class_to_inputs[label]
         class_labels = class_to_labels[label]
         num_class_samples = len(class_inputs)
-        
+
         # Calculate repetitions and remainder for this class
         repetitions = desired_size // num_class_samples
         remainder = desired_size % num_class_samples
-        
+
         # Replicate inputs and labels for this class
         if isinstance(inputs, list):
             replicated_inputs = class_inputs * repetitions + class_inputs[:remainder]
             replicated_labels = class_labels * repetitions + class_labels[:remainder]
-        
+
         elif isinstance(inputs, torch.Tensor):
-            replicated_inputs = torch.cat([torch.stack(class_inputs)] * repetitions + [torch.stack(class_inputs)[:remainder]], dim=0)
-            replicated_labels = torch.cat([torch.stack(class_labels)] * repetitions + [torch.stack(class_labels)[:remainder]], dim=0)
-        
+            replicated_inputs = torch.cat(
+                [torch.stack(class_inputs)] * repetitions
+                + [torch.stack(class_inputs)[:remainder]],
+                dim=0,
+            )
+            replicated_labels = torch.cat(
+                [torch.stack(class_labels)] * repetitions
+                + [torch.stack(class_labels)[:remainder]],
+                dim=0,
+            )
+
         # Add the replicated data to the new dataset
-        inputs_new.extend(replicated_inputs) if isinstance(inputs, list) else inputs_new.append(replicated_inputs)
-        labels_new.extend(replicated_labels) if isinstance(inputs, list) else labels_new.append(replicated_labels)
-    
+        (
+            inputs_new.extend(replicated_inputs)
+            if isinstance(inputs, list)
+            else inputs_new.append(replicated_inputs)
+        )
+        (
+            labels_new.extend(replicated_labels)
+            if isinstance(inputs, list)
+            else labels_new.append(replicated_labels)
+        )
+
     # If inputs are tensors, concatenate them into a single tensor
     if isinstance(inputs, torch.Tensor):
         inputs_new = torch.cat(inputs_new, dim=0)
         labels_new = torch.cat(labels_new, dim=0)
-    
+
     return inputs_new, labels_new
+
 
 def count_samples_per_class(dataloader):
     """
@@ -134,34 +152,36 @@ def count_samples_per_class(dataloader):
 
     Parameters:
         dataloader (torch.utils.data.DataLoader): DataLoader object containing the dataset.
-    
+
     Returns:
         class_counts (dict): Dictionary with class labels as keys and sample counts as values.
     """
-    
+
     class_counts = defaultdict(int)  # Initialize a dictionary with default int (0)
-    
+
     # Iterate through the DataLoader
     for _, labels in dataloader:
         for label in labels:
             class_counts[int(label)] += 1  # Convert label to int and count
-    
+
     return dict(class_counts)
+
 
 def log_samples_per_class(Y):
     """
     Logs the number of samples per class from a given label array Y.
-    
+
     Parameters:
         Y: numpy array or list of class labels.
     """
-    
+
     # Count the occurrences of each class
     unique_classes, counts = torch.unique(Y, return_counts=True)
-    
+
     # Log the results
     for cls, count in zip(unique_classes, counts):
         logger.debug(f"Class {cls}: {count} samples")
+
 
 def embedding_step(model, embeddings, labels, classes):
 
@@ -190,12 +210,16 @@ def train_ExpansionBuffer(
 
     criterion = nn.CrossEntropyLoss()
     optimizer = (
-        optim.Adam(model.parameters(), lr=config["model"]["learning_rate"], weight_decay=1e-5)
+        optim.Adam(
+            model.parameters(), lr=config["model"]["learning_rate"], weight_decay=1e-5
+        )
         if model.backbone and not config["model"]["freeze_mode"] == "all"
         else None
     )
 
-    sampling_strategy = get_sampling_strategy(config["incremental"]["sampling_strategy"])
+    sampling_strategy = get_sampling_strategy(
+        config["incremental"]["sampling_strategy"]
+    )
 
     replayBuffer = MemoryReplayBuffer(
         memory_size_per_class=buffer_batch_size,
@@ -250,7 +274,11 @@ def train_ExpansionBuffer(
                 train_subset, batch_size=config["dataset"]["batch_size"], shuffle=True
             )
 
-        num_epochs = config["training"]["epochs"] if not config["model"]["freeze_mode"] == "all" else 1
+        num_epochs = (
+            config["training"]["epochs"]
+            if not config["model"]["freeze_mode"] == "all"
+            else 1
+        )
 
         best_val_loss = float("inf")
         patience = config["training"]["patience"]
@@ -258,7 +286,11 @@ def train_ExpansionBuffer(
 
         for epoch in range(num_epochs):
 
-            training_classes = range(0, task * classes_per_task) if task != 0 else range(classes_per_task)
+            training_classes = (
+                range(0, task * classes_per_task)
+                if task != 0
+                else range(classes_per_task)
+            )
 
             ## CURRENT TASK TRAINING
 
@@ -268,14 +300,14 @@ def train_ExpansionBuffer(
             total_correct = 0
             total_samples = 0
             batch_count = 0
-            
+
             logger.debug(f"Training current task in neurons {training_classes}")
 
             for inputs, labels in tqdm(
                 global_train_loader,
                 desc=f"Task {task+1} Global Train, Epoch {epoch + 1}",
             ):
-                
+
                 inputs, labels = inputs.to(device), labels.to(device)
 
                 # embeddings = model.backbone(inputs)
@@ -284,20 +316,22 @@ def train_ExpansionBuffer(
                 labels = torch.nn.functional.one_hot(
                     labels, num_classes=current_num_classes
                 )
-                
+
                 if task == 0:
-                    total_correct, total_samples, batch_count, running_loss = train_step(
-                        model,
-                        inputs,
-                        labels,
-                        classes=class_range,
-                        criterion=criterion,
-                        optimizer=optimizer,
-                        total_correct=total_correct,
-                        total_samples=total_samples,
-                        batch_count=batch_count,
-                        running_loss=running_loss,
-                        calculate_metrics=True
+                    total_correct, total_samples, batch_count, running_loss = (
+                        train_step(
+                            model,
+                            inputs,
+                            labels,
+                            classes=class_range,
+                            criterion=criterion,
+                            optimizer=optimizer,
+                            total_correct=total_correct,
+                            total_samples=total_samples,
+                            batch_count=batch_count,
+                            running_loss=running_loss,
+                            calculate_metrics=True,
+                        )
                     )
                 else:
                     train_step(
@@ -305,7 +339,7 @@ def train_ExpansionBuffer(
                         inputs,
                         labels,
                         classes=training_classes,
-                        calculate_metrics=False
+                        calculate_metrics=False,
                     )
 
             if task == 0:
@@ -322,19 +356,17 @@ def train_ExpansionBuffer(
 
             replayBuffer.sample(get_predictions=model.rolann, device=device)
 
-            X_memory, Y_memory = replayBuffer.get_memory_samples(classes=range(task * classes_per_task))
+            X_memory, Y_memory = replayBuffer.get_memory_samples(
+                classes=range(task * classes_per_task)
+            )
 
             if X_memory.size(0) > 0 and task != 0:
 
-                # log_samples_per_class(Y_memory)
-
                 class_counts = count_samples_per_class(global_train_loader)
 
-                # logger.debug(f"Replicating to size {max(class_counts.values())}")
-                
-                X_replicated, Y_replicated = replicate_samples(X_memory, Y_memory, max(class_counts.values()))
-
-                # log_samples_per_class(Y_replicated)
+                X_replicated, Y_replicated = replicate_samples(
+                    X_memory, Y_memory, max(class_counts.values())
+                )
 
                 past_task_dataset = TensorDataset(X_replicated, Y_replicated)
 
@@ -346,13 +378,13 @@ def train_ExpansionBuffer(
 
                 concatenated_dataset = ConcatDataset([past_task_dataset, train_subset])
                 local_train_loader = DataLoader(
-                    concatenated_dataset, batch_size=config["dataset"]["batch_size"], shuffle=True
+                    concatenated_dataset,
+                    batch_size=config["dataset"]["batch_size"],
+                    shuffle=True,
                 )
 
-                # logger.debug(count_samples_per_class(local_train_loader))
-
                 logger.debug(f"Making the local train in the neurons {class_range}")
-                
+
                 running_loss = 0.0
                 total_correct = 0
                 total_samples = 0
@@ -369,18 +401,20 @@ def train_ExpansionBuffer(
                         labels, num_classes=current_num_classes
                     )
 
-                    total_correct, total_samples, batch_count, running_loss = train_step(
-                        model,
-                        inputs,
-                        labels,
-                        criterion=criterion,
-                        optimizer=optimizer,
-                        total_correct=total_correct,
-                        total_samples=total_samples,
-                        batch_count=batch_count,
-                        running_loss=running_loss,
-                        classes=class_range,
-                        calculate_metrics=True
+                    total_correct, total_samples, batch_count, running_loss = (
+                        train_step(
+                            model,
+                            inputs,
+                            labels,
+                            criterion=criterion,
+                            optimizer=optimizer,
+                            total_correct=total_correct,
+                            total_samples=total_samples,
+                            batch_count=batch_count,
+                            running_loss=running_loss,
+                            classes=class_range,
+                            calculate_metrics=True,
+                        )
                     )
 
                 epoch_loss = running_loss / batch_count
@@ -448,8 +482,6 @@ def train_ExpansionBuffer(
                         }
                     )
 
-                # results["train_loss"].append(epoch_loss)
-                # results["train_accuracy"].append(epoch_acc)
                 results["test_loss"].append(test_loss)
                 results["test_accuracy"].append(test_accuracy)
 

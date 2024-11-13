@@ -62,10 +62,6 @@ def run_experiment(trial):
         if "Test Accuracy:" in line:
             test_accuracy = float(line.split(":")[1].strip())
             break
-    for line in reversed(result.stdout.split("\n")):
-        if "Train Accuracy:" in line:
-            train_accuracy = float(line.split(":")[1].strip())
-            break
 
     # Return the negative test accuracy (minimization problem)
     return -test_accuracy

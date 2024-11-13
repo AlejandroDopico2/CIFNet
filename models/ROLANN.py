@@ -5,7 +5,6 @@ Created on Tue Jul 16 10:11:21 2024
 @author: Oscar & Alejandro
 """
 
-from time import time
 from typing import Optional
 import torch
 import torch.nn as nn

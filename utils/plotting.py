@@ -1,5 +1,6 @@
 from typing import Optional
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def plot_results(results, save_path: Optional[str] = None):
@@ -104,3 +105,51 @@ def plot_task_accuracies(
     plt.savefig(save_path)
     plt.close()
     print(f"Task accuracies plot saved as {save_path}")
+
+
+def plot_average_accuracy(
+    task_accuracies,
+    num_classes_per_task,
+    save_path: str = "average_accuracy.png",
+):
+    mean_accuracies = []
+
+    num_tasks = len(task_accuracies)
+
+    cumulative_classes = [num_classes_per_task * (i + 1) for i in range(num_tasks)]
+
+    for i in range(len(task_accuracies)):
+        accuracies = [task_accuracies[str(j)][i - j] for j in range(i + 1)]
+        mean_accuracies.append(sum(accuracies) / (i + 1))
+
+    # Plotting with improved style and axis labels
+    plt.figure(figsize=(10, 6))
+    plt.plot(
+        cumulative_classes,
+        mean_accuracies,
+        marker="o",
+        color="b",
+        label="Mean Accuracy",
+    )
+
+    # Enhanced labels and ticks
+    plt.xlabel("Cumulative Number of Classes Learned", fontsize=12)
+    plt.ylabel("Average Accuracy", fontsize=12)
+    plt.title(
+        "Average Accuracy vs. Cumulative Number of Classes Learned",
+        fontsize=14,
+        fontweight="bold",
+    )
+
+    # Setting axis limits and formatting
+    plt.ylim(0, 1)  # accuracy values range from 0 to 1
+    plt.xticks(cumulative_classes)  # cumulative classes on x-axis
+    plt.yticks(np.linspace(0, 1, 11))  # create 0.1 intervals for better granularity
+
+    # Add grid and legend
+    plt.grid(visible=True, linestyle="--", linewidth=0.5)
+    plt.legend(fontsize=10)
+
+    # Save and show plot
+    plt.savefig(save_path)
+    plt.show()

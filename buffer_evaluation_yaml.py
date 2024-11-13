@@ -1,5 +1,3 @@
-import argparse
-from collections import defaultdict
 from glob import glob
 import json
 import os
@@ -15,23 +13,28 @@ logger.add(
     lambda msg: print(msg, end=""),
     colorize=True,
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-) 
+)
+
 
 def load_config(yaml_path):
     with open(yaml_path, "r") as file:
         return yaml.safe_load(file)
 
+
 def create_output_directory(yaml_path):
-    filename = os.path.basename(yaml_path).split('.')[0]
-    
-    dataset, strategy = filename.split('_')
-    
+    filename = os.path.basename(yaml_path).split(".")[0]
+
+    dataset, strategy = filename.split("_")
+
     date_str = strftime("%m_%d")
-    output_dir = os.path.join("experiments", f"experiments_{date_str}", f"{dataset}_{strategy}")
-    
+    output_dir = os.path.join(
+        "experiments", f"experiments_{date_str}", f"{dataset}_{strategy}"
+    )
+
     os.makedirs(output_dir, exist_ok=True)
-    
+
     return output_dir
+
 
 def run_multiple_mains(config, buffer_sizes, output_dir, num_runs=2):
     results = []
@@ -40,8 +43,8 @@ def run_multiple_mains(config, buffer_sizes, output_dir, num_runs=2):
         logger.info(f"Starting tests with buffer_size {buffer_size}")
 
         for run in range(num_runs):
-            config['incremental']['buffer_size'] = buffer_size
-            config['output_dir'] = os.path.join(
+            config["incremental"]["buffer_size"] = buffer_size
+            config["output_dir"] = os.path.join(
                 output_dir,
                 f"buffer_size_{buffer_size}_run_{run}",
             )
@@ -143,38 +146,46 @@ def plot_results(results, output_dir):
     plt.savefig(result_path)
     logger.info("Results plotted and saved to buffer_size_results_comparison.png")
 
+
 def process_experiments(base_dir):
     results = []
-    
+
     # Recorre todos los directorios en experiments_10_24/CIFAR10_random/
-    for dirpath in glob(os.path.join(base_dir, 'buffer_size_*_run_*')):
+    for dirpath in glob(os.path.join(base_dir, "buffer_size_*_run_*")):
         # Lee el archivo CIFAR10_ResNet_results.json
-        json_path = os.path.join(dirpath, 'CIFAR10_ResNet_results.json')
+        json_path = os.path.join(dirpath, "CIFAR10_ResNet_results.json")
         if os.path.exists(json_path):
-            with open(json_path, 'r') as f:
+            with open(json_path, "r") as f:
                 data = json.load(f)
-                buffer_size = int(dirpath.split('_')[-3])  # Obtiene el tamaño de buffer
+                buffer_size = int(dirpath.split("_")[-3])  # Obtiene el tamaño de buffer
                 avg_forgetting = data.get("avg_forgetting", 0)
                 avg_final_accuracy = data.get("avg_final_accuracy", 0)
-                
-                results.append([{
-                    "buffer_size": buffer_size,
-                    "avg_forgetting": avg_forgetting,
-                    "avg_final_accuracy": avg_final_accuracy
-                }])
+
+                results.append(
+                    [
+                        {
+                            "buffer_size": buffer_size,
+                            "avg_forgetting": avg_forgetting,
+                            "avg_final_accuracy": avg_final_accuracy,
+                        }
+                    ]
+                )
 
     return results
+
 
 if __name__ == "__main__":
     yaml_path = "cfgs/CIFAR10_random.yaml"
     config = load_config(yaml_path)
-    
+
     output_dir = create_output_directory(yaml_path)
-    
+
     # buffer_sizes = range(900, 1501, 200)
     # results = run_multiple_mains(config, buffer_sizes, output_dir, num_runs=2)
 
-    results = process_experiments(os.path.join("experiments","experiments_10_24","CIFAR10_random"))
-    
+    results = process_experiments(
+        os.path.join("experiments", "experiments_10_24", "CIFAR10_random")
+    )
+
     print(output_dir)
     plot_results(results, output_dir)

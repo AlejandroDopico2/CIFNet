@@ -8,15 +8,18 @@ from sklearn.neighbors import NearestNeighbors
 import torch
 import torch.nn.functional as F
 
+
 def add_gaussian_noise(embeddings, mean=0.0, std=0.01):
     noise = torch.normal(mean=mean, std=std, size=embeddings.shape)
     return embeddings + noise
+
 
 def mixup_embeddings(embeddings, alpha=0.2):
     lam = np.random.beta(alpha, alpha)
     idx = torch.randperm(embeddings.size(0))
     mixed_embeddings = lam * embeddings + (1 - lam) * embeddings[idx]
     return mixed_embeddings
+
 
 class BaseSampler(ABC):
     @abstractmethod
@@ -54,6 +57,7 @@ class RandomSampling(BaseSampler):
 
         return new_buffer
 
+
 class EntropySampling(BaseSampler):
 
     def _compute_entropy(self, predictions: torch.Tensor) -> np.ndarray:
@@ -89,14 +93,16 @@ class EntropySampling(BaseSampler):
 
 class BoundarySampling(BaseSampler):
 
-    def _compute_boundary_scores(self, X: np.ndarray, labels: np.ndarray, n_neighbors: int) -> np.ndarray:
-        nn = NearestNeighbors(n_neighbors=n_neighbors, metric='euclidean')
+    def _compute_boundary_scores(
+        self, X: np.ndarray, labels: np.ndarray, n_neighbors: int
+    ) -> np.ndarray:
+        nn = NearestNeighbors(n_neighbors=n_neighbors, metric="euclidean")
         nn.fit(X)
-        
+
         distances, indices = nn.kneighbors(X)
-        
+
         boundary_scores = np.mean(labels[indices] != labels[:, np.newaxis], axis=1)
-        
+
         return boundary_scores
 
     def sample(self, buffer, n_samples, **kwargs):
@@ -116,7 +122,9 @@ class BoundarySampling(BaseSampler):
             predictions = get_predictions(samples.to(device))
             pred_labels = predictions.argmax(dim=1).cpu().numpy()
 
-            boundary_scores = self._compute_boundary_scores(X, pred_labels, n_neighbors=n_neighbors)
+            boundary_scores = self._compute_boundary_scores(
+                X, pred_labels, n_neighbors=n_neighbors
+            )
 
             top_indices = np.argsort(boundary_scores)[-n_samples:]
 
@@ -128,7 +136,7 @@ class BoundarySampling(BaseSampler):
 
 
 class CentroidSampling(BaseSampler):
-    
+
     def sample(self, buffer, n_samples, **kwargs):
         new_buffer = defaultdict(list)
 
@@ -137,7 +145,7 @@ class CentroidSampling(BaseSampler):
             if len(samples) <= n_samples:
                 new_buffer[label] = samples
                 continue
-            
+
             X = samples.cpu().numpy()
 
             nn = NearestNeighbors(metric="euclidean")
@@ -145,7 +153,9 @@ class CentroidSampling(BaseSampler):
 
             centroid = np.mean(X, axis=0)
 
-            indices = nn.kneighbors([centroid], n_neighbors=n_samples, return_distance=False)
+            indices = nn.kneighbors(
+                [centroid], n_neighbors=n_samples, return_distance=False
+            )
 
             new_buffer[label] = samples[indices].squeeze()
 
@@ -234,21 +244,23 @@ class TypicalitySampling(BaseSampler):
 
         return torch.stack(x_memory), torch.tensor(y_memory, dtype=torch.long)
 
+
 class HybridSampling(BaseSampler):
     def __init__(self):
         self.boundary_sampler = BoundarySampling()
         self.centroid_sampler = CentroidSampling()
 
     def sample(self, buffer, n_samples, **kwargs):
-        boundary_buffer = self.boundary_sampler.sample(buffer, n_samples//2, **kwargs)
-        centroid_buffer = self.centroid_sampler.sample(buffer, n_samples//2, **kwargs)
+        boundary_buffer = self.boundary_sampler.sample(buffer, n_samples // 2, **kwargs)
+        centroid_buffer = self.centroid_sampler.sample(buffer, n_samples // 2, **kwargs)
 
         hybrid_buffer = defaultdict(list)
 
         for label in boundary_buffer.keys():
-            hybrid_buffer[label] = torch.cat([boundary_buffer[label], centroid_buffer[label]])
-            
+            hybrid_buffer[label] = torch.cat(
+                [boundary_buffer[label], centroid_buffer[label]]
+            )
+
         assert boundary_buffer.keys() == centroid_buffer.keys() == hybrid_buffer.keys()
 
         return hybrid_buffer
-        

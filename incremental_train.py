@@ -28,7 +28,9 @@ def incremental_train(
     device = config["device"]
     criterion = nn.CrossEntropyLoss()
     optimizer = (
-        optim.Adam(model.parameters(), lr=config["model"]["learning_rate"], weight_decay=1e-5)
+        optim.Adam(
+            model.parameters(), lr=config["model"]["learning_rate"], weight_decay=1e-5
+        )
         if model.backbone and not config["model"]["freeze_mode"] == "all"
         else None
     )
@@ -96,7 +98,11 @@ def incremental_train(
                 train_subset, batch_size=config["dataset"]["batch_size"], shuffle=True
             )
 
-        num_epochs = config["training"]["epochs"] if not config["model"]["freeze_mode"] == "all" else 1
+        num_epochs = (
+            config["training"]["epochs"]
+            if not config["model"]["freeze_mode"] == "all"
+            else 1
+        )
 
         best_val_loss = float("inf")
         patience = config["training"]["patience"]

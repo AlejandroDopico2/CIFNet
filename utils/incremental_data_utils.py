@@ -160,7 +160,6 @@ def prepare_data(
                 class_indices.append(class_indices_i)
         class_indices = torch.cat(class_indices)
 
-    index = class_indices[0]
     return TensorSubset(dataset, class_indices)
 
 

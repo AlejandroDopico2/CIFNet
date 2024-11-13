@@ -33,7 +33,7 @@ def run_multiple_mains(buffer_sizes, num_runs=2):
         use_wandb=False,
         samples_per_task=None,
         freeze_rolann=False,
-        sampling_strategy = "centroid"
+        sampling_strategy="centroid",
     )
 
     results = []

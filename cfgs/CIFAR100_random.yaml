@@ -12,8 +12,8 @@ rolann:
   dropout_rate: 0.0
   freeze_rolann: false
 incremental:
-  num_tasks: 20
-  classes_per_task: 5
+  num_tasks: 100
+  classes_per_task: 1
   initial_tasks: 1
   samples_per_task: null
   buffer_size: 250
@@ -23,5 +23,5 @@ training:
   epochs: 10
   use_wandb: false
   patience: null
-output_dir: "."
+output_dir: "experiments/experiments_04_11/CIFAR100_k100"
 device: "cuda"
