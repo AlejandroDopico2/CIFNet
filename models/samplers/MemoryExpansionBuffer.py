@@ -5,7 +5,7 @@ from collections import defaultdict
 from models.samplers import SamplingStrategy
 
 
-class MemoryReplayBuffer:
+class MemoryExpansionBuffer:
     def __init__(
         self,
         classes_per_task: int,
@@ -24,13 +24,13 @@ class MemoryReplayBuffer:
         )
 
         for sample, label in zip(x, y):
-            label_item = label.item()
+            label_item = torch.argmax(label).item()
 
             if label_item not in current_classes:
                 continue
 
             self.buffer[label_item].append(sample.cpu())
-            if label >= self.class_count:
+            if label_item >= self.class_count:
                 self.class_count = label_item + 1
 
     def sample(self, **kwargs):

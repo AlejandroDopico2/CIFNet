@@ -4,7 +4,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Subset
 from sklearn.metrics import accuracy_score
 from models.ROLANN_incremental import ROLANN_Incremental
-from models.samplers.MemoryReplayBuffer import MemoryReplayBuffer
+from models.samplers.MemoryExpansionBuffer import MemoryExpansionBuffer
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -106,7 +106,7 @@ test_dataset = datasets.MNIST(
     root="./data", train=False, download=True, transform=transform
 )
 
-buffer = MemoryReplayBuffer(memory_size_per_class)
+buffer = MemoryExpansionBuffer(memory_size_per_class)
 rolann = ROLANN_Incremental(0, activation="lin", lamb=1.0)
 
 overall_accuracies = []

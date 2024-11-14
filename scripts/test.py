@@ -14,7 +14,6 @@ def evaluate(
     task: Optional[int] = None,
     mode: str = "Test",
 ) -> Tuple[float, float]:
-
     model.eval()
     running_loss = 0.0
     total_correct = 0

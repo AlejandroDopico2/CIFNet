@@ -115,7 +115,6 @@ class CifarResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x, feature=False, T=1, labels=False, scale=None, keep=None):
-
         x = self.conv_1_3x3(x)
         print(f"Capa inicial {x.shape} ")
         x = F.relu(self.bn_1(x), inplace=True)

@@ -230,7 +230,6 @@ def main(args=None) -> Dict[str, Union[float, str]]:
     plot_path = os.path.join(args.output_dir, filename + "_plot.png")
 
     if args.use_eb:
-
         results, task_train_accuracies, task_accuracies = train_ExpansionBuffer(
             model, train_dataset, test_dataset, config
         )

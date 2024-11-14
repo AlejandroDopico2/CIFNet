@@ -59,9 +59,7 @@ class RandomSampling(BaseSampler):
 
 
 class EntropySampling(BaseSampler):
-
     def _compute_entropy(self, predictions: torch.Tensor) -> np.ndarray:
-
         pred_np = predictions.detach().cpu().numpy()
 
         entropies = entropy(pred_np, axis=1)
@@ -74,7 +72,6 @@ class EntropySampling(BaseSampler):
         new_buffer = defaultdict(list)
 
         for label, samples in buffer.items():
-
             if len(samples) <= n_samples:
                 new_buffer[label] = samples
                 continue
@@ -92,7 +89,6 @@ class EntropySampling(BaseSampler):
 
 
 class BoundarySampling(BaseSampler):
-
     def _compute_boundary_scores(
         self, X: np.ndarray, labels: np.ndarray, n_neighbors: int
     ) -> np.ndarray:
@@ -112,7 +108,6 @@ class BoundarySampling(BaseSampler):
         device = kwargs.get("device")
 
         for label, samples in buffer.items():
-
             if len(samples) <= n_samples:
                 new_buffer[label] = samples
                 continue
@@ -136,7 +131,6 @@ class BoundarySampling(BaseSampler):
 
 
 class CentroidSampling(BaseSampler):
-
     def sample(self, buffer, n_samples, **kwargs):
         new_buffer = defaultdict(list)
 
@@ -164,11 +158,9 @@ class CentroidSampling(BaseSampler):
 
 class KMeansSampling(BaseSampler):
     def sample(self, buffer, n_samples, **kwargs):
-
         new_buffer = defaultdict(list)
 
         for label, samples in buffer.items():
-
             if len(samples) <= n_samples:
                 new_buffer[label] = samples
                 continue
@@ -194,7 +186,6 @@ class KMeansSampling(BaseSampler):
 
 class TypicalitySampling(BaseSampler):
     def sample(self, buffer, n_samples, **kwargs):
-
         batch_size = 200
         x_memory, y_memory = [], []
 
@@ -203,7 +194,6 @@ class TypicalitySampling(BaseSampler):
 
         for label, samples in buffer.items():
             if len(samples) > 0:
-
                 samples = torch.stack([x for x, _ in samples])
 
                 kmeans = KMeans(
@@ -235,7 +225,6 @@ class TypicalitySampling(BaseSampler):
                         new_buffer[label].append(samples[best_example_idx])
 
         for label in new_buffer:
-
             selected_samples = torch.stack(new_buffer[label])
             print(selected_samples.shape)
 

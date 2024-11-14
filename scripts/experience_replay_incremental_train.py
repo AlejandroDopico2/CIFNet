@@ -15,8 +15,8 @@ from models.samplers.SamplingStrategy import (
     RandomSampling,
     TypicalitySampling,
 )
-from utils.incremental_data_utils import prepare_data
-from models.samplers.MemoryReplayBuffer import MemoryReplayBuffer
+from incremental_dataloaders.data_preparation import prepare_data
+from models.samplers.MemoryExpansionBuffer import MemoryExpansionBuffer
 from models.rolannet import RolanNET
 from scripts.test import evaluate
 from utils.utils import split_dataset
@@ -37,10 +37,12 @@ def get_sampling_strategy(strategy_name):
 
 
 def train_step(
+    task: int,
     model: RolanNET,
     inputs: Subset,
     labels: Subset,
     classes: Optional[List[int]],
+    expansion_buffer: Optional[MemoryExpansionBuffer] = None,
     criterion: Optional[nn.Module] = None,
     optimizer: Optional[nn.Module] = None,
     calculate_metrics: bool = False,
@@ -48,16 +50,21 @@ def train_step(
     total_samples: Optional[int] = None,
     batch_count: Optional[int] = None,
     running_loss: Optional[float] = None,
+    is_embedding: bool = False,
 ) -> Optional[Tuple[int, int, int, int]]:
-
     labels = process_labels(labels)
 
-    model.update_rolann(inputs, labels, classes=classes)
-    outputs = model(inputs)
+    if expansion_buffer:
+        embeddings = model.backbone(inputs)
+        expansion_buffer.add_task_samples(embeddings, labels, task=task)
+        model.update_rolann(embeddings, labels, classes=classes, is_embedding=True)
+    else:
+        model.update_rolann(inputs, labels, classes=classes, is_embedding=is_embedding)
 
     if not calculate_metrics:
         return None
 
+    outputs = model.rolann(inputs) if is_embedding else model(inputs)
     loss = criterion(outputs, torch.argmax(labels, dim=1))
 
     if optimizer:
@@ -77,7 +84,6 @@ def train_step(
 
 
 def replicate_samples(inputs, labels, desired_size):
-
     if isinstance(inputs, (list, torch.Tensor)):
         num_samples = len(inputs)
     else:
@@ -184,7 +190,6 @@ def log_samples_per_class(Y):
 
 
 def embedding_step(model, embeddings, labels, classes):
-
     labels = process_labels(labels)
     model.update_rolann(embeddings, labels, classes=classes, is_embedding=True)
 
@@ -195,7 +200,6 @@ def train_ExpansionBuffer(
     test_dataset: Subset,
     config: Dict[str, Any],
 ) -> Dict[str, List[float]]:
-
     logger.remove()  # Remove default logger to customize it
     logger.add(
         lambda msg: print(msg, end=""),
@@ -221,7 +225,7 @@ def train_ExpansionBuffer(
         config["incremental"]["sampling_strategy"]
     )
 
-    replayBuffer = MemoryReplayBuffer(
+    expansion_buffer = MemoryExpansionBuffer(
         memory_size_per_class=buffer_batch_size,
         classes_per_task=classes_per_task,
         sampling_strategy=sampling_strategy(),
@@ -247,7 +251,6 @@ def train_ExpansionBuffer(
         wandb.watch(model)
 
     for task in range(config["incremental"]["num_tasks"]):
-
         logger.info(
             f"Training on classes {task*classes_per_task} to {(task+1)*classes_per_task - 1}"
         )
@@ -285,7 +288,6 @@ def train_ExpansionBuffer(
         patience_counter = 0
 
         for epoch in range(num_epochs):
-
             training_classes = (
                 range(0, task * classes_per_task)
                 if task != 0
@@ -307,37 +309,40 @@ def train_ExpansionBuffer(
                 global_train_loader,
                 desc=f"Task {task+1} Global Train, Epoch {epoch + 1}",
             ):
-
                 inputs, labels = inputs.to(device), labels.to(device)
-
-                # embeddings = model.backbone(inputs)
-                replayBuffer.add_task_samples(inputs, labels, task=task)
 
                 labels = torch.nn.functional.one_hot(
                     labels, num_classes=current_num_classes
                 )
 
                 if task == 0:
-                    total_correct, total_samples, batch_count, running_loss = (
-                        train_step(
-                            model,
-                            inputs,
-                            labels,
-                            classes=class_range,
-                            criterion=criterion,
-                            optimizer=optimizer,
-                            total_correct=total_correct,
-                            total_samples=total_samples,
-                            batch_count=batch_count,
-                            running_loss=running_loss,
-                            calculate_metrics=True,
-                        )
-                    )
-                else:
-                    train_step(
+                    (
+                        total_correct,
+                        total_samples,
+                        batch_count,
+                        running_loss,
+                    ) = train_step(
+                        task,
                         model,
                         inputs,
                         labels,
+                        expansion_buffer=expansion_buffer,
+                        classes=class_range,
+                        criterion=criterion,
+                        optimizer=optimizer,
+                        total_correct=total_correct,
+                        total_samples=total_samples,
+                        batch_count=batch_count,
+                        running_loss=running_loss,
+                        calculate_metrics=True,
+                    )
+                else:
+                    train_step(
+                        task,
+                        model,
+                        inputs,
+                        labels,
+                        expansion_buffer=expansion_buffer,
                         classes=training_classes,
                         calculate_metrics=False,
                     )
@@ -352,36 +357,16 @@ def train_ExpansionBuffer(
 
                 task_train_accuracies[task] = epoch_acc
 
-            ## BUFFER REPLAY TRAINING
+            ## BUFFER EXPANSION TRAINING
 
-            replayBuffer.sample(get_predictions=model.rolann, device=device)
+            expansion_buffer.sample(get_predictions=model.rolann, device=device)
 
-            X_memory, Y_memory = replayBuffer.get_memory_samples(
+            X_memory, Y_memory = expansion_buffer.get_memory_samples(
                 classes=range(task * classes_per_task)
             )
 
             if X_memory.size(0) > 0 and task != 0:
-
                 class_counts = count_samples_per_class(global_train_loader)
-
-                X_replicated, Y_replicated = replicate_samples(
-                    X_memory, Y_memory, max(class_counts.values())
-                )
-
-                past_task_dataset = TensorDataset(X_replicated, Y_replicated)
-
-                train_subset = prepare_data(
-                    train_dataset,
-                    class_range=class_range,
-                    samples_per_task=samples_per_task,
-                )
-
-                concatenated_dataset = ConcatDataset([past_task_dataset, train_subset])
-                local_train_loader = DataLoader(
-                    concatenated_dataset,
-                    batch_size=config["dataset"]["batch_size"],
-                    shuffle=True,
-                )
 
                 logger.debug(f"Making the local train in the neurons {class_range}")
 
@@ -391,30 +376,76 @@ def train_ExpansionBuffer(
                 batch_count = 0
 
                 for inputs, labels in tqdm(
-                    local_train_loader,
+                    global_train_loader,
                     desc=f"Task {task+1} Local Train, Epoch {epoch + 1}",
                 ):
-
                     inputs, labels = inputs.to(device), labels.to(device)
 
                     labels = torch.nn.functional.one_hot(
                         labels, num_classes=current_num_classes
                     )
 
-                    total_correct, total_samples, batch_count, running_loss = (
-                        train_step(
-                            model,
-                            inputs,
-                            labels,
-                            criterion=criterion,
-                            optimizer=optimizer,
-                            total_correct=total_correct,
-                            total_samples=total_samples,
-                            batch_count=batch_count,
-                            running_loss=running_loss,
-                            classes=class_range,
-                            calculate_metrics=True,
-                        )
+                    (
+                        total_correct,
+                        total_samples,
+                        batch_count,
+                        running_loss,
+                    ) = train_step(
+                        task,
+                        model,
+                        inputs,
+                        labels,
+                        criterion=criterion,
+                        optimizer=optimizer,
+                        total_correct=total_correct,
+                        total_samples=total_samples,
+                        batch_count=batch_count,
+                        running_loss=running_loss,
+                        classes=class_range,
+                        calculate_metrics=True,
+                    )
+
+                X_replicated, Y_replicated = replicate_samples(
+                    X_memory, Y_memory, max(class_counts.values())
+                )
+
+                past_task_dataset = TensorDataset(X_replicated, Y_replicated)
+
+                replay_loader = DataLoader(
+                    past_task_dataset,
+                    batch_size=config["dataset"]["batch_size"],
+                    shuffle=True,
+                )
+
+                for embeddings, labels in tqdm(
+                    replay_loader,
+                    desc=f"Task {task+1} Replay, Epoch {epoch + 1}",
+                ):
+                    embeddings, labels = embeddings.to(device), labels.to(device)
+
+                    labels = torch.nn.functional.one_hot(
+                        labels, num_classes=current_num_classes
+                    )
+
+                    (
+                        total_correct,
+                        total_samples,
+                        batch_count,
+                        running_loss,
+                    ) = train_step(
+                        task,
+                        model,
+                        embeddings,
+                        labels,
+                        criterion=criterion,
+                        optimizer=optimizer,
+                        total_correct=total_correct,
+                        total_samples=total_samples,
+                        batch_count=batch_count,
+                        running_loss=running_loss,
+                        classes=class_range,
+                        calculate_metrics=True,
+                        is_embedding=True,
                     )
 
                 epoch_loss = running_loss / batch_count
@@ -486,12 +517,8 @@ def train_ExpansionBuffer(
                 results["test_accuracy"].append(test_accuracy)
 
         logger.debug(
-            f"Memory buffer distribution: {replayBuffer.get_class_distribution()}"
+            f"Memory buffer distribution: {expansion_buffer.get_class_distribution()}"
         )
-
-    logger.info(
-        f"\nMemory buffer distribution: {replayBuffer.get_class_distribution()}"
-    )
 
     if config["training"]["use_wandb"]:
         wandb.finish()

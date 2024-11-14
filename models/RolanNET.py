@@ -76,7 +76,6 @@ class RolanNET(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-
         if self.backbone:
             x = x.to(self.device)
             x = self.backbone(x).squeeze()

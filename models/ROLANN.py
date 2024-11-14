@@ -62,7 +62,6 @@ class ROLANN(nn.Module):
         self.s = torch.stack(sl, dim=0)
 
     def _update_weights(self, X: Tensor, d: Tensor) -> Tensor:
-
         X = X.T
         n = X.size(1)  # Number of data points (n)
 

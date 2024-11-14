@@ -93,7 +93,6 @@ def plot_comparative_results(directories, metrics, output_dir):
 
 
 if __name__ == "__main__":
-
     experiments_dir = os.path.join("experiments", "experiments_10_22")
     directories = os.listdir(experiments_dir)
 

@@ -100,18 +100,15 @@ def plot_results(results):
     axs = axs.ravel()
 
     for i, metric in enumerate(metrics):
-
         means = []
         stds = []
 
         for buffer_size in buffer_sizes:
-
             filtered_results = [
                 r for r in results if r[0]["buffer_size"] == buffer_size
             ]
 
             if filtered_results:
-
                 mean_value = sum(r[0][metric] for r in filtered_results) / len(
                     filtered_results
                 )

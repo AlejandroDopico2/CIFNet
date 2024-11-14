@@ -15,7 +15,6 @@ def train(
     test_dataset: Dataset,
     config: Dict[str, Any],
 ) -> Dict[str, List[float]]:
-
     logger.remove()  # Remove default logger to customize it
     logger.add(
         lambda msg: print(msg, end=""),

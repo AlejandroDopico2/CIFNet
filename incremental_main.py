@@ -6,6 +6,7 @@ import json
 import yaml
 from loguru import logger
 
+from utils.data_utils import get_dataset_instance
 from utils.incremental_data_utils import get_transforms
 from scripts.experience_replay_incremental_train import train_ExpansionBuffer
 from incremental_train import incremental_train
@@ -72,7 +73,6 @@ def main(config=None) -> Dict[str, Union[float, str]]:
     logger.info("Incremental Learning Setup:")
     logger.info(f" - Number of Tasks: {config['incremental']['num_tasks']}")
     logger.info(f" - Classes per Task: {config['incremental']['classes_per_task']}")
-    logger.info(f" - Initial Tasks: {config['incremental']['initial_tasks']}")
     logger.info(
         f" - Samples per Task: {config['incremental']['samples_per_task'] or 'All dataset'}"
     )
@@ -89,18 +89,10 @@ def main(config=None) -> Dict[str, Union[float, str]]:
     )
     logger.info(f"Output Directory: {config['output_dir']}")
 
-    flatten = True if config["model"]["backbone"] is None else False
-
-    transforms = get_transforms(config["dataset"]["name"], flatten)
-
-    train_dataset, test_dataset = get_datasets(
-        config["dataset"]["name"],
-        transform=transforms,
-    )
+    train_dataset, test_dataset = get_dataset_instance(config["dataset"]["name"])
     model = build_incremental_model(config)
 
     if config["incremental"]["use_eb"]:
-
         results, task_train_accuracies, task_accuracies = train_ExpansionBuffer(
             model, train_dataset, test_dataset, config
         )

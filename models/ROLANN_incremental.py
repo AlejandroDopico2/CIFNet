@@ -68,7 +68,6 @@ class ROLANN_Incremental(nn.Module):
         self.s = torch.stack(sl, dim=0)
 
     def _update_weights(self, X: Tensor, d: Tensor) -> Tensor:
-
         X = X.T
         n = X.size(1)  # Number of data points (n)
 
@@ -204,7 +203,6 @@ class ROLANN_Incremental(nn.Module):
     def aggregate_update(
         self, X: Tensor, d: Tensor, classes: Optional[int] = None
     ) -> None:
-
         if classes is None:
             classes = (
                 torch.argmax(d, dim=1).unique()

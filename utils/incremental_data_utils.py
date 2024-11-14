@@ -73,7 +73,6 @@ def get_transforms(dataset: str, flatten: bool) -> transforms.Compose:
 def get_datasets(
     dataset: str, transform: transforms.Compose, binary: bool = False
 ) -> Tuple[Dataset, Dataset]:
-
     if dataset == "MNIST":
         train_dataset = datasets.MNIST(
             root="./data", train=True, download=True, transform=transform
@@ -209,7 +208,6 @@ def get_class_instances(
 
 
 if __name__ == "__main__":
-
     train_dataset, test_dataset, num_classes = get_datasets(
         "MNIST", get_transforms("MNIST", False)
     )

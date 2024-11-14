@@ -1,70 +1,48 @@
 from typing import Any, Dict, Tuple
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
-from torchvision import transforms, datasets
+
+from incremental_dataloaders.datasets import (
+    BaseDataset,
+    CIFAR100Dataset,
+    CIFAR10Dataset,
+    MNISTDataset,
+    TinyImageNetDataset,
+)
+
+DATASET_CLASSES = {
+    "MNIST": MNISTDataset,
+    "CIFAR10": CIFAR10Dataset,
+    "CIFAR100": CIFAR100Dataset,
+    "TinyImageNet": TinyImageNetDataset,
+}
 
 
-def get_transforms(dataset: str, flatten: bool) -> transforms.Compose:
-    transform_list = []
+def get_dataset_instance(
+    dataset_name: str, root: str = "./data", img_size: int = 224
+) -> Tuple[BaseDataset, BaseDataset]:
+    """
+    Instantiate and return train and test dataset instances based on dataset name.
 
-    # if not flatten:
-    # transform_list = [transforms.Resize((224, 224))]
+    Args:
+        dataset_name (str): The name of the dataset.
+        root (str): The root directory for storing dataset files.
+        img_size (int): Image size to be used in transforms.
 
-    if dataset == "MNIST":
-        transform_list.extend(
-            [transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))]
-        )
-    elif dataset.startswith("CIFAR"):
-        transform_list.extend(
-            [
-                transforms.ToTensor(),
-                transforms.Normalize(
-                    mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010]
-                ),
-            ]
-        )
+    Returns:
+        Tuple[BaseDataset, BaseDataset]: Train and test dataset instances.
+    """
+    # Retrieve the dataset class from the dictionary
+    dataset_class = DATASET_CLASSES.get(dataset_name)
 
-    else:
-        raise ValueError("Unsupported dataset")
+    if not dataset_class:
+        raise ValueError(f"Dataset '{dataset_name}' is not supported.")
 
-    if flatten:
-        transform_list.append(transforms.Lambda(lambda x: x.view(-1)))
+    # Instantiate the dataset for train and test
+    train_dataset = dataset_class(root=root, train=True, img_size=img_size)
+    test_dataset = dataset_class(root=root, train=False, img_size=img_size)
 
-    return transforms.Compose(transform_list)
-
-
-def get_datasets(
-    dataset: str, transform: transforms.Compose
-) -> Tuple[Dataset, Dataset]:
-
-    if dataset == "MNIST":
-        train_dataset = datasets.MNIST(
-            root="./data", train=True, download=True, transform=transform
-        )
-        test_dataset = datasets.MNIST(
-            root="./data", train=False, download=True, transform=transform
-        )
-        num_classes = 10
-    elif dataset == "CIFAR10":
-        train_dataset = datasets.CIFAR10(
-            root="./data", train=True, download=True, transform=transform
-        )
-        test_dataset = datasets.CIFAR10(
-            root="./data", train=False, download=True, transform=transform
-        )
-        num_classes = 10
-    elif dataset == "CIFAR100":
-        train_dataset = datasets.CIFAR100(
-            root="./data", train=True, download=True, transform=transform
-        )
-        test_dataset = datasets.CIFAR100(
-            root="./data", train=False, download=True, transform=transform
-        )
-        num_classes = 100
-    else:
-        raise ValueError("Unsupported dataset")
-
-    return train_dataset, test_dataset, num_classes
+    return train_dataset, test_dataset
 
 
 def set_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader]:

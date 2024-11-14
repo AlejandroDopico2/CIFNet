@@ -17,7 +17,6 @@ def incremental_train(
     test_dataset: Subset,
     config: Dict[str, Any],
 ) -> Dict[str, List[float]]:
-
     logger.remove()  # Remove default logger to customize it
     logger.add(
         lambda msg: print(msg, end=""),
@@ -49,7 +48,6 @@ def incremental_train(
     task_train_accuracies: Dict[int, float] = {}
 
     if config["dataset"]["name"] == "MNIST":
-
         data_path = os.path.join("Data", "MNIST", "raw")
         flatten = False if model.backbone else True
         X_train, y_train = load_mnist(data_path, kind="train", flatten=flatten)
@@ -109,7 +107,6 @@ def incremental_train(
         patience_counter = 0
 
         for epoch in range(num_epochs):
-
             model.train()
 
             running_loss = 0.0
@@ -175,7 +172,6 @@ def incremental_train(
 
         # Evaluate on all tasks seen so far
         for eval_task in range(task + 1):
-
             test_class_range = range(
                 eval_task * classes_per_task, (eval_task + 1) * classes_per_task
             )
