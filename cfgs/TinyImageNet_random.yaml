@@ -12,8 +12,8 @@ rolann:
   dropout_rate: 0.0
   freeze_rolann: false
 incremental:
-  num_tasks: 5
-  classes_per_task: 40
+  num_tasks: 2
+  classes_per_task: 100
   samples_per_task: null
   buffer_size: 200
   use_eb: true
@@ -22,5 +22,5 @@ training:
   epochs: 1
   use_wandb: false
   patience: null
-output_dir: "experiments/experiments_11_12/TinyImageNet_k5"
+output_dir: "experiments/experiments_11_12/TinyImageNet_k2"
 device: "cuda"
