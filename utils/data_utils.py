@@ -1,6 +1,4 @@
-from typing import Any, Dict, Tuple
-import torch
-from torch.utils.data import DataLoader, Dataset, Subset
+from typing import Tuple
 
 from incremental_dataloaders.datasets import (
     BaseDataset,
@@ -43,35 +41,3 @@ def get_dataset_instance(
     test_dataset = dataset_class(root=root, train=False, img_size=img_size)
 
     return train_dataset, test_dataset
-
-
-def set_dataloaders(config: Dict[str, Any]) -> Tuple[DataLoader, DataLoader]:
-    transform = get_transforms(config["dataset"], config["flatten"])
-    train_dataset, test_dataset, num_classes = get_datasets(
-        config["dataset"], transform
-    )
-
-    config["num_classes"] = num_classes
-
-    # Use the specified number of instances, or all if there are fewer
-    num_train = min(config["num_instances"], len(train_dataset))
-    num_test = min(config["num_instances"] // 5, len(test_dataset))
-
-    train_indices = torch.randperm(len(train_dataset))[:num_train]
-    test_indices = torch.randperm(len(test_dataset))[:num_test]
-
-    train_subset = Subset(train_dataset, train_indices)
-    test_subset = Subset(test_dataset, test_indices)
-
-    train_loader = DataLoader(
-        train_subset, batch_size=config["batch_size"], shuffle=True
-    )
-    test_loader = DataLoader(
-        test_subset, batch_size=config["batch_size"], shuffle=False
-    )
-
-    print(
-        f"Using {num_train} instances for training and {num_test} instances for testing"
-    )
-
-    return train_loader, test_loader

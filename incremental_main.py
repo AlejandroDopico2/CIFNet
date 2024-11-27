@@ -6,11 +6,10 @@ import json
 import yaml
 from loguru import logger
 
+
 from utils.data_utils import get_dataset_instance
-from utils.incremental_data_utils import get_transforms
 from scripts.experience_replay_incremental_train import train_ExpansionBuffer
 from incremental_train import incremental_train
-from utils.incremental_data_utils import get_datasets
 from utils.model_utils import build_incremental_model
 from utils.plotting import plot_task_accuracies
 from utils.utils import calculate_cl_metrics
