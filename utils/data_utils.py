@@ -4,6 +4,7 @@ from incremental_dataloaders.datasets import (
     BaseDataset,
     CIFAR100Dataset,
     CIFAR10Dataset,
+    ImageNet100Dataset,
     MNISTDataset,
     TinyImageNetDataset,
 )
@@ -13,6 +14,7 @@ DATASET_CLASSES = {
     "CIFAR10": CIFAR10Dataset,
     "CIFAR100": CIFAR100Dataset,
     "TinyImageNet": TinyImageNetDataset,
+    "ImageNet100": ImageNet100Dataset
 }
 
 

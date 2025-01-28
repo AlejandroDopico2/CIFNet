@@ -97,3 +97,20 @@ class TinyImageNetDataset(BaseDataset):
                 ),
             ]
         )
+
+class ImageNet100Dataset(BaseDataset):
+    def __init__(self, root="./data", train=True, img_size: int = 224):
+        root = os.path.join(root, "imagenet-100", "train" if train else "val")
+        super().__init__(root, train, img_size=img_size)
+        self.dataset = datasets.ImageFolder(root=self.root, transform=self.transform)
+
+    def get_transform(self, img_size: Union[Tuple, int]):
+        return transforms.Compose(
+            [
+                transforms.Resize((img_size, img_size)),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),
+            ]
+        )
