@@ -14,7 +14,7 @@ DATASET_CLASSES = {
     "CIFAR10": CIFAR10Dataset,
     "CIFAR100": CIFAR100Dataset,
     "TinyImageNet": TinyImageNetDataset,
-    "ImageNet100": ImageNet100Dataset
+    "ImageNet100": ImageNet100Dataset,
 }
 
 

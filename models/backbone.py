@@ -17,13 +17,30 @@ class Backbone(ABC, nn.Module):
         return self.model(x)
 
 
-class ResNetBackbone(Backbone):
+class ResNet18Backbone(Backbone):
     def __init__(self, pretrained: bool = True):
-        super(ResNetBackbone, self).__init__()
+        super(ResNet18Backbone, self).__init__()
         self.model = (
             models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
             if pretrained
             else models.resnet18()
+        )
+        self.model.fc = nn.Identity()  # Remove the final fully connected layer
+
+    def set_input_channels(self, channels: int):
+        if channels == 1:
+            self.model.conv1 = nn.Conv2d(
+                1, 64, kernel_size=7, stride=2, padding=3, bias=False
+            )
+
+
+class ResNet34Backbone(Backbone):
+    def __init__(self, pretrained: bool = True):
+        super(ResNet34Backbone, self).__init__()
+        self.model = (
+            models.resnet34(weights=models.ResNet34_Weights.DEFAULT)
+            if pretrained
+            else models.resnet34()
         )
         self.model.fc = nn.Identity()  # Remove the final fully connected layer
 

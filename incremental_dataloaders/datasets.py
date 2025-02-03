@@ -98,6 +98,7 @@ class TinyImageNetDataset(BaseDataset):
             ]
         )
 
+
 class ImageNet100Dataset(BaseDataset):
     def __init__(self, root="./data", train=True, img_size: int = 224):
         root = os.path.join(root, "imagenet-100", "train" if train else "val")

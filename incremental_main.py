@@ -5,7 +5,7 @@ from typing import Dict, Union
 import json
 import yaml
 from loguru import logger
-
+from codecarbon import EmissionsTracker
 
 from utils.data_utils import get_dataset_instance
 from scripts.experience_replay_incremental_train import train_ExpansionBuffer
@@ -91,14 +91,18 @@ def main(config=None) -> Dict[str, Union[float, str]]:
     train_dataset, test_dataset = get_dataset_instance(config["dataset"]["name"])
     model = build_incremental_model(config)
 
-    if config["incremental"]["use_eb"]:
-        results, task_train_accuracies, task_accuracies = train_ExpansionBuffer(
-            model, train_dataset, test_dataset, config
-        )
-    else:
-        results, task_train_accuracies, task_accuracies = incremental_train(
-            model, train_dataset, test_dataset, config
-        )
+    project_name = f"{config['dataset']['name']}_inc{config['incremental']['classes_per_task']}_ROLANN"
+    with EmissionsTracker(
+        project_name=project_name, output_dir="rolann_emissions"
+    ) as tracker:
+        if config["incremental"]["use_eb"]:
+            results, task_train_accuracies, task_accuracies = train_ExpansionBuffer(
+                model, train_dataset, test_dataset, config
+            )
+        else:
+            results, task_train_accuracies, task_accuracies = incremental_train(
+                model, train_dataset, test_dataset, config
+            )
 
     cl_metrics = calculate_cl_metrics(task_accuracies)
 
