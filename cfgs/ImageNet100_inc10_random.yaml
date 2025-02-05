@@ -1,0 +1,27 @@
+dataset:
+  name: ImageNet100
+  batch_size: 128
+model:
+  backbone: ResNet18
+  pretrained: true
+  learning_rate: 0.001
+  freeze_mode: all
+rolann:
+  rolann_lamb: 0.01
+  sparse: false
+  dropout_rate: 0.0
+  freeze_rolann: false
+incremental:
+  num_tasks: 10
+  classes_per_task: 10
+  initial_tasks: 1
+  samples_per_task: null
+  buffer_size: 250
+  use_eb: true
+  sampling_strategy: random
+training:
+  epochs: 10
+  use_wandb: false
+  patience: null
+output_dir: "rolann_emissions/ImageNet100"
+device: "cuda"
