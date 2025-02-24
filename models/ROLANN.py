@@ -201,8 +201,7 @@ class ROLANN(nn.Module):
         self, X: Tensor, d: Tensor, classes: Optional[int] = None
     ) -> None:
         if classes is None:
-            classes = self.num_classes
-            
+            classes = range(self.num_classes)
 
         self.update_weights(X, d, classes)  # Se calculan las nuevas M y US
         self._aggregate_parcial(

@@ -12,9 +12,10 @@ from utils.model_utils import build_incremental_model
 from utils.plotting import plot_task_accuracies
 from utils.utils import calculate_cl_metrics
 
+
 class ExperimentRunner:
     """Main experiment orchestration class"""
-    
+
     def __init__(self, config_path: Optional[str] = None):
         self.config = self._load_config(config_path)
         self._setup_logging()
@@ -28,7 +29,7 @@ class ExperimentRunner:
         if config_path is None:
             args = self._parse_args()
             config_path = args.config_path
-            
+
         with open(config_path, "r") as f:
             return yaml.safe_load(f)
 
@@ -38,8 +39,11 @@ class ExperimentRunner:
             description="Train an incremental CV model with specified parameters"
         )
         parser.add_argument(
-            "-p", "--config_path", type=str, required=True,
-            help="Path to YAML configuration file"
+            "-p",
+            "--config_path",
+            type=str,
+            required=True,
+            help="Path to YAML configuration file",
         )
         return parser.parse_args()
 
@@ -50,16 +54,21 @@ class ExperimentRunner:
             lambda msg: print(msg, end=""),
             colorize=True,
             format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-                   "<level>{level}</level> | "
-                   "<cyan>{name}</cyan>:<cyan>{function}</cyan>:"
-                   "<cyan>{line}</cyan> - <level>{message}</level>",
+            "<level>{level}</level> | "
+            "<cyan>{name}</cyan>:<cyan>{function}</cyan>:"
+            "<cyan>{line}</cyan> - <level>{message}</level>",
         )
 
     def _validate_config(self):
         """Validate configuration structure"""
         required_keys = {
-            'device', 'dataset', 'model', 'training',
-            'incremental', 'output_dir', 'rolann'
+            "device",
+            "dataset",
+            "model",
+            "training",
+            "incremental",
+            "output_dir",
+            "rolann",
         }
         if not required_keys.issubset(self.config.keys()):
             missing = required_keys - self.config.keys()
@@ -67,7 +76,7 @@ class ExperimentRunner:
 
     def _init_paths(self):
         """Initialize output directories"""
-        self.output_dir = Path(self.config['output_dir'])
+        self.output_dir = Path(self.config["output_dir"])
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.emissions_dir = self.output_dir / "emissions"
         self.emissions_dir.mkdir(exist_ok=True)
@@ -82,12 +91,11 @@ class ExperimentRunner:
 
     def _setup_wandb(self):
         """Initialize Weights & Biases tracking if enabled"""
-        if self.config['training']['use_wandb']:
+        if self.config["training"]["use_wandb"]:
             import wandb
+
             wandb.init(
-                project="RolanNet-Model",
-                config=self.config,
-                dir=str(self.output_dir)
+                project="RolanNet-Model", config=self.config, dir=str(self.output_dir)
             )
 
             wandb.watch(self.model)
@@ -96,24 +104,21 @@ class ExperimentRunner:
         """Execute full experiment pipeline"""
         try:
             self._log_config()
-            
             # Initialize components
             train_dataset, test_dataset = get_dataset_instance(
-                self.config['dataset']['name']
+                self.config["dataset"]["name"]
             )
             self.model = build_incremental_model(self.config)
             self.trainer = CILTrainer(model=self.model, config=self.config)
-            
+
             # Track emissions
             with EmissionsTracker(
                 project_name=f"{self.config['dataset']['name']}_inc",
                 output_dir=str(self.emissions_dir)
             ) as tracker:
-                
-                # Execute training
-                results, train_acc, task_acc = self.trainer.train(
-                    train_dataset, test_dataset
-                )
+
+            # Execute training
+                results, train_acc, task_acc = self.trainer.train(train_dataset, test_dataset)
 
             print(results, train_acc, task_acc)
             # Calculate and log metrics
@@ -132,13 +137,11 @@ class ExperimentRunner:
         result_data = {
             **cl_metrics,
             **self._get_hyperparams(),
-            "emissions": self._get_emissions_data()
+            "emissions": self._get_emissions_data(),
         }
 
         # Save JSON files
-        (self.output_dir / "results.json").write_text(
-            json.dumps(result_data, indent=4)
-        )
+        (self.output_dir / "results.json").write_text(json.dumps(result_data, indent=4))
         (self.output_dir / "task_accuracies.json").write_text(
             json.dumps(task_acc, indent=4)
         )
@@ -146,10 +149,10 @@ class ExperimentRunner:
     def _get_hyperparams(self) -> Dict:
         """Extract relevant hyperparameters for saving"""
         return {
-            'dataset': self.config['dataset'],
-            'model': self.config['model'],
-            'training': self.config['training'],
-            'incremental': self.config['incremental']
+            "dataset": self.config["dataset"],
+            "model": self.config["model"],
+            "training": self.config["training"],
+            "incremental": self.config["incremental"],
         }
 
     def _get_emissions_data(self) -> Dict:
@@ -165,18 +168,19 @@ class ExperimentRunner:
         plot_task_accuracies(
             train_acc,
             task_acc,
-            self.config['incremental']['num_tasks'],
-            save_path=str(plot_path)
+            self.config["incremental"]["num_tasks"],
+            save_path=str(plot_path),
         )
         logger.info(f"Saved accuracy plot to: {plot_path}")
 
+
 if __name__ == "__main__":
-    try:
-        runner = ExperimentRunner()
-        metrics = runner.run()
-        logger.info("\nExperiment completed successfully!")
-        logger.info(f"Final metrics: {json.dumps(metrics, indent=4)}")
-        
-    except Exception as e:
-        logger.critical(f"Critical error: {str(e)}")
-        exit(1)
+    # try:
+    runner = ExperimentRunner()
+    metrics = runner.run()
+    logger.info("\nExperiment completed successfully!")
+    logger.info(f"Final metrics: {json.dumps(metrics, indent=4)}")
+
+    # except Exception as e:
+    # logger.critical(f"Critical error: {str(e)}")
+    # exit(1)

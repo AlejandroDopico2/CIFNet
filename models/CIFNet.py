@@ -37,7 +37,6 @@ class CIFNet(nn.Module):
             sparse=sparse,
             dropout_rate=dropout_rate,
         ).to(self.device)
-        
 
     def freeze_backbone(self, freeze_mode: str) -> None:
         if freeze_mode == "none":

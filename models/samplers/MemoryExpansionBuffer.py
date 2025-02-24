@@ -18,7 +18,9 @@ class MemoryExpansionBuffer:
         self.sampling_strategy = sampling_strategy
         self.current_max_class = 0
 
-    def add_task_samples(self, embeddings: torch.Tensor, labels: torch.Tensor, task: int) -> None:
+    def add_task_samples(
+        self, embeddings: torch.Tensor, labels: torch.Tensor, task: int
+    ) -> None:
         """Add samples to buffer using vectorized operations"""
         class_indices = torch.argmax(labels, dim=1)
 
@@ -27,13 +29,15 @@ class MemoryExpansionBuffer:
         task_classes = range(task_start, task_end)
 
         for task_class in task_classes:
-            mask = (class_indices == task_class)
+            mask = class_indices == task_class
             task_class_embeddings = embeddings[mask].cpu()
-            
+
             if task_class_embeddings.size(0) == 0:
                 continue
 
-            self.buffer[task_class] = torch.cat([self.buffer[task_class], task_class_embeddings])
+            self.buffer[task_class] = torch.cat(
+                [self.buffer[task_class], task_class_embeddings]
+            )
             self.current_max_class = max(self.current_max_class, task_class + 1)
 
         self._maintain_buffer()
@@ -43,20 +47,26 @@ class MemoryExpansionBuffer:
         for cls in list(self.buffer.keys()):
             if self.buffer[cls].size(0) > self.memory_size:
                 self.buffer[cls] = self.sampling_strategy.sample(
-                    self.buffer[cls], 
-                    self.memory_size
+                    self.buffer[cls], self.memory_size
                 )
 
-    def get_memory_samples(self, classes: List[int]) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_memory_samples(
+        self, classes: List[int]
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Efficiently retrieve samples with tensor concatenation"""
         valid_classes = [c for c in classes if c in self.buffer]
-        
+
         if not valid_classes:
             return torch.empty(0), torch.empty(0)
 
         embeddings = torch.cat([self.buffer[c] for c in valid_classes])
 
-        labels = torch.cat([torch.full(size=len(self.buffer[c]), fill_value=c, dtype=torch.long) for c in valid_classes])
+        labels = torch.cat(
+            [
+                torch.full(size=(len(self.buffer[c]),), fill_value=c, dtype=torch.long)
+                for c in valid_classes
+            ]
+        )
 
         return embeddings, labels
 

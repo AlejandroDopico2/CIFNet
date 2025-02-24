@@ -12,10 +12,11 @@ from incremental_dataloaders.data_preparation import prepare_data
 from models.CIFNet import CIFNet
 from models.samplers.MemoryExpansionBuffer import MemoryExpansionBuffer
 from scripts.experience_replay_incremental_train import get_sampling_strategy
-from utils.utils import split_dataset
+
 
 class MetricTracker:
     """Class to track and compute training/evaluation metrics"""
+
     def __init__(self):
         self.reset()
         self.history = defaultdict(list)
@@ -54,6 +55,7 @@ class MetricTracker:
             f"Accuracy: {100 * self.accuracy:.2f}%"
         )
         self.reset()
+
 
 def replicate_samples(inputs, labels, desired_size):
     if isinstance(inputs, (list, torch.Tensor)):
@@ -123,6 +125,7 @@ def replicate_samples(inputs, labels, desired_size):
 
     return inputs_new, labels_new
 
+
 def count_samples_per_class(dataloader):
     """
     Count the total number of samples per class in a DataLoader.
@@ -143,6 +146,7 @@ def count_samples_per_class(dataloader):
 
     return dict(class_counts)
 
+
 class CILTrainer:
     def __init__(self, model: CIFNet, config: Dict[str, Any]):
         self.model = model
@@ -152,7 +156,6 @@ class CILTrainer:
         self.num_tasks = config["incremental"]["num_tasks"]
         self.metrics = MetricTracker()
 
-        
         self._setup_logging()
         self._initialize_components()
 
@@ -167,6 +170,7 @@ class CILTrainer:
 
         if self.config["training"]["use_wandb"]:
             import wandb
+
             self.wandb = wandb
             self.wandb.init(project="RolanNet-Model", config=self.config)
             self.wandb.watch(self.model)
@@ -189,11 +193,13 @@ class CILTrainer:
             return optim.Adam(
                 self.model.parameters(),
                 lr=self.config["model"]["learning_rate"],
-                weight_decay=1e-5
+                weight_decay=1e-5,
             )
         return None
 
-    def train(self, train_dataset: Subset, test_dataset: Subset) -> Tuple[Dict, Dict, Dict]:
+    def train(
+        self, train_dataset: Subset, test_dataset: Subset
+    ) -> Tuple[Dict, Dict, Dict]:
         """Main training loop"""
         results = defaultdict(list)
         task_accuracies = {i: [] for i in range(self.num_tasks)}
@@ -201,21 +207,23 @@ class CILTrainer:
 
         for task in range(self.num_tasks):
             self._handle_new_task(task, train_dataset)
-            
+
             # Training phases
             train_metrics = self._train_task(task, train_dataset)
-            self._train_with_buffer(task, train_dataset)
-            
+            self._train_with_buffer(task)
+
             # Evaluation
             task_metrics = self._evaluate_tasks(task, test_dataset)
             self._log_metrics(task, train_metrics, task_metrics)
-            
+
             # Update results
             task_train_accuracies[task] = train_metrics["accuracy"]
-            results.update({
-                "test_loss": task_metrics["test_loss"],
-                "test_accuracy": task_metrics["test_accuracy"]
-            })
+            results.update(
+                {
+                    "test_loss": task_metrics["test_loss"],
+                    "test_accuracy": task_metrics["test_accuracy"],
+                }
+            )
 
         if self.config["training"]["use_wandb"]:
             self.wandb.finish()
@@ -226,23 +234,18 @@ class CILTrainer:
         """Prepare model and data for new task"""
         logger.info(f"Starting task {task+1}/{self.num_tasks}")
         current_classes = self._get_task_classes(task)
-        
+
         # Model adjustments
         self.model.rolann.add_num_classes(self.classes_per_task)
-        
+
         # Data preparation
-        self.train_loader, self.val_loader = self._prepare_task_data(
-            train_dataset, current_classes
-        )
+        self.train_loader = self._prepare_task_data(train_dataset, current_classes)
 
     def _get_task_classes(self, task: int) -> range:
         """Get class range for current task"""
-        return range(
-            task * self.classes_per_task,
-            (task + 1) * self.classes_per_task
-        )
+        return range(task * self.classes_per_task, (task + 1) * self.classes_per_task)
 
-    def _prepare_task_data(self, dataset: Subset, classes: range) -> Tuple[DataLoader, DataLoader]:
+    def _prepare_task_data(self, dataset: Subset, classes: range) -> DataLoader:
         """Prepare data loaders for current task"""
         subset = prepare_data(
             dataset,
@@ -250,18 +253,12 @@ class CILTrainer:
             samples_per_task=self.config["incremental"]["samples_per_task"],
         )
 
-        if self.model.backbone and not self.config["model"]["freeze_mode"] == "all":
-            return split_dataset(subset, self.config)
-            
-        return (
-            DataLoader(
-                subset,
-                batch_size=self.config["dataset"]["batch_size"],
-                shuffle=True,
-            ),
-            None
+        return DataLoader(
+            subset,
+            batch_size=self.config["dataset"]["batch_size"],
+            shuffle=True,
         )
-    
+
     def _train_task(self, task: int, train_dataset: Subset) -> Dict[str, float]:
         """Train the model on the current task"""
         logger.debug(f"Training on task {task + 1}")
@@ -290,16 +287,18 @@ class CILTrainer:
             desc=f"Task {task + 1}",
         ):
             inputs, labels = inputs.to(self.device), labels.to(self.device)
-            labels = torch.nn.functional.one_hot(labels, num_classes=(task + 1) * self.classes_per_task)
+            labels = torch.nn.functional.one_hot(
+                labels, num_classes=(task + 1) * self.classes_per_task
+            )
 
             # Update model with current task data
             step_result = self._train_step(
                 inputs=inputs,
                 labels=labels,
                 task=task,
-                classes=self._get_task_classes(task),
+                classes=None,
                 calculate_metrics=True,
-                is_embedding=False
+                is_embedding=False,
             )
 
             if step_result:
@@ -307,12 +306,9 @@ class CILTrainer:
                 self.metrics.update(loss, correct, total)
 
         self.metrics.log_epoch("train", task + 1)
-        return {
-            "loss": self.metrics.avg_loss,
-            "accuracy": self.metrics.accuracy
-        }
+        return {"loss": self.metrics.avg_loss, "accuracy": self.metrics.accuracy}
 
-    def _train_with_buffer(self, task: int, train_dataset: Subset):
+    def _train_with_buffer(self, task: int):
         """Train using the expansion buffer"""
         if task == 0:
             return  # No buffer for the first task
@@ -327,7 +323,8 @@ class CILTrainer:
             class_counts = count_samples_per_class(self.train_loader)
             logger.debug(X_memory.size())
             X_replicated, Y_replicated = replicate_samples(
-                X_memory, Y_memory, max(class_counts.values()))
+                X_memory, Y_memory, max(class_counts.values())
+            )
             past_task_dataset = TensorDataset(X_replicated, Y_replicated)
 
             replay_loader = DataLoader(
@@ -341,31 +338,21 @@ class CILTrainer:
 
     def _train_replay(self, task: int, replay_loader: DataLoader):
         """Train on replayed data from the buffer"""
-        self.metrics.reset()
 
         for embeddings, labels in tqdm(replay_loader, desc=f"Task {task + 1} Replay"):
-            logger.debug(embeddings.size())
             embeddings, labels = embeddings.to(self.device), labels.to(self.device)
             labels = torch.nn.functional.one_hot(
-                labels, 
-                num_classes=(task + 1) * self.classes_per_task
+                labels, num_classes=(task + 1) * self.classes_per_task
             ).float()
 
-            step_result = self._train_step(
+            self._train_step(
                 inputs=embeddings,
                 labels=labels,
                 task=task,
                 classes=self._get_task_classes(task),
-                calculate_metrics=True,
-                is_embedding=True
+                calculate_metrics=False,
+                is_embedding=True,
             )
-
-            if step_result:
-                loss, correct, total = step_result
-                self.metrics.update(loss, correct, total)
-
-        # Log and store replay metrics
-        self.metrics.log_epoch("replay", task + 1)
 
     def _evaluate_tasks(self, task: int, test_dataset: Subset) -> Dict[str, float]:
         """Evaluate the model on all tasks seen so far"""
@@ -396,7 +383,9 @@ class CILTrainer:
 
         return test_metrics
 
-    def _evaluate(self, data_loader: DataLoader, task: int, mode: str = "Test") -> Tuple[float, float]:
+    def _evaluate(
+        self, data_loader: DataLoader, task: int, mode: str = "Test"
+    ) -> Tuple[float, float]:
         """Evaluate the model on a given data loader"""
         self.model.eval()
         self.metrics.reset()
@@ -406,11 +395,11 @@ class CILTrainer:
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, labels)
-                
+
                 pred = torch.argmax(outputs, dim=1)
                 correct = (pred == labels).sum().item()
                 total = labels.size(0)
-                
+
                 self.metrics.update(loss.item(), correct, total)
 
         # Log and store evaluation metrics
@@ -426,11 +415,11 @@ class CILTrainer:
                 f"test_accuracy_task_{task + 1}": task_metrics["test_accuracy"][-1],
                 f"test_loss_task_{task + 1}": task_metrics["test_loss"][-1],
             }
-            
+
             # Add historical metrics
             for metric, values in self.metrics.history.items():
                 log_data[metric] = values[-1] if values else 0.0
-                
+
             self.wandb.log(log_data)
 
     def _train_step(
@@ -440,11 +429,11 @@ class CILTrainer:
         task: int,
         classes: List[int],
         calculate_metrics: bool = False,
-        is_embedding: bool = False
+        is_embedding: bool = False,
     ) -> Optional[Tuple[float, int, int]]:
         """
         Core training step handling both model updates and optional metric calculation
-        
+
         Args:
             inputs: Batch of input tensors
             labels: Ground truth labels
@@ -452,7 +441,7 @@ class CILTrainer:
             classes: List of active classes for this task
             calculate_metrics: Whether to compute loss/accuracy
             is_embedding: Whether inputs are precomputed embeddings
-            
+
         Returns:
             Tuple of (loss, correct, total) if calculate_metrics=True, else None
         """
@@ -460,11 +449,12 @@ class CILTrainer:
         processed_labels = self._process_labels(labels)
 
         # Update memory buffer with current samples
-        if self.expansion_buffer:
+        if not is_embedding:
+            with torch.no_grad():
+                embeddings = self.model.backbone(inputs)
+
             self.expansion_buffer.add_task_samples(
-                inputs.detach(),
-                processed_labels.detach(),
-                task=task
+                embeddings, processed_labels.detach(), task=task
             )
 
         # Update ROLANN layer
@@ -472,18 +462,18 @@ class CILTrainer:
             inputs.detach(),
             processed_labels,
             classes=classes,
-            is_embedding=is_embedding
+            is_embedding=is_embedding,
         )
 
-        if not calculate_metrics:
+        if not calculate_metrics or is_embedding:
             return None
 
         # Forward pass
         outputs = self.model(inputs)
-        
+
         # Calculate loss
         loss = self.criterion(outputs, torch.argmax(processed_labels, dim=1))
-        
+
         # Calculate accuracy
         preds = torch.argmax(outputs, dim=1)
         true_labels = torch.argmax(processed_labels, dim=1)
@@ -495,5 +485,3 @@ class CILTrainer:
     def _process_labels(self, labels: torch.Tensor) -> torch.Tensor:
         """Apply label smoothing to ground truth labels"""
         return labels * 0.9 + 0.05
-
-    

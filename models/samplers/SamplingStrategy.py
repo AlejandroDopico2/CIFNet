@@ -45,7 +45,7 @@ class RandomSampling:
         """Efficient random sampling for single class"""
         if embeddings.size(0) <= n_samples:
             return embeddings
-            
+
         indices = torch.randperm(embeddings.size(0))[:n_samples]
         return embeddings[indices]
 

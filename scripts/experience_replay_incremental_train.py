@@ -17,7 +17,7 @@ from models.samplers.SamplingStrategy import (
 )
 from incremental_dataloaders.data_preparation import prepare_data
 from models.samplers.MemoryExpansionBuffer import MemoryExpansionBuffer
-from models.rolannet import RolanNET
+from models.CIFNet import CIFNet
 from scripts.test import evaluate
 from utils.utils import split_dataset
 
@@ -38,7 +38,7 @@ def get_sampling_strategy(strategy_name):
 
 def train_step(
     task: int,
-    model: RolanNET,
+    model: CIFNet,
     inputs: Subset,
     labels: Subset,
     classes: Optional[List[int]],
@@ -195,7 +195,7 @@ def embedding_step(model, embeddings, labels, classes):
 
 
 def train_ExpansionBuffer(
-    model: RolanNET,
+    model: CIFNet,
     train_dataset: Subset,
     test_dataset: Subset,
     config: Dict[str, Any],
@@ -248,7 +248,7 @@ def train_ExpansionBuffer(
     if config["training"]["use_wandb"]:
         import wandb
 
-        wandb.init(project="RolanNet-Model", config=config)
+        wandb.init(project="CIFNet-Model", config=config)
         wandb.watch(model)
 
     for task in range(config["incremental"]["num_tasks"]):
@@ -476,9 +476,7 @@ def train_ExpansionBuffer(
                 else:
                     patience_counter += 1
                     if patience_counter >= patience:
-                        logger.info(
-                            f"Early stopping triggered at epoch {epoch + 1}"
-                        )
+                        logger.info(f"Early stopping triggered at epoch {epoch + 1}")
                         break
 
         # Evaluate on all tasks seen so far
