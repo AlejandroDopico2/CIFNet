@@ -7,9 +7,9 @@ import yaml
 from loguru import logger
 from codecarbon import EmissionsTracker
 
+from models.CIFNet import CIFNet
 from utils.data_utils import get_dataset_instance
-from scripts.experience_replay_incremental_train import train_ExpansionBuffer
-from incremental_train import incremental_train
+from scripts.train_cifnet import CILTrainer
 from utils.model_utils import build_incremental_model
 from utils.plotting import plot_task_accuracies
 from utils.utils import calculate_cl_metrics
@@ -92,17 +92,22 @@ def main(config=None) -> Dict[str, Union[float, str]]:
     model = build_incremental_model(config)
 
     project_name = f"{config['dataset']['name']}_inc{config['incremental']['classes_per_task']}_ROLANN"
+    output_dir = "rolann_emissions"
+    os.makedirs(output_dir, exist_ok=True)
     with EmissionsTracker(
-        project_name=project_name, output_dir="rolann_emissions"
+        project_name=project_name, output_dir=output_dir
     ) as tracker:
         if config["incremental"]["use_eb"]:
-            results, task_train_accuracies, task_accuracies = train_ExpansionBuffer(
-                model, train_dataset, test_dataset, config
-            )
+            # results, task_train_accuracies, task_accuracies = train_ExpansionBuffer(
+            #     model, train_dataset, test_dataset, config
+            # )
+            trainer = CILTrainer(model=model, config=config)
         else:
             results, task_train_accuracies, task_accuracies = incremental_train(
                 model, train_dataset, test_dataset, config
             )
+
+    trainer.train(train_dataset, test_dataset)
 
     cl_metrics = calculate_cl_metrics(task_accuracies)
 

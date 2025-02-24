@@ -1,12 +1,11 @@
-from models.ROLANN_incremental import ROLANN_Incremental
+from models.ROLANN import ROLANN
 from models.backbone import Backbone
-from models.rolann import ROLANN
 import torch.nn as nn
 import torch
 from typing import Optional
 
 
-class RolanNET(nn.Module):
+class CIFNet(nn.Module):
     def __init__(
         self,
         num_classes: int,
@@ -19,10 +18,8 @@ class RolanNET(nn.Module):
         device: str = "cuda",
         dropout_rate: float = 0.0,
         freeze_mode: str = "all",
-        incremental: bool = False,
-        freeze_rolann: bool = False,
     ) -> None:
-        super(RolanNET, self).__init__()
+        super(CIFNet, self).__init__()
 
         self.device = device
 
@@ -33,23 +30,14 @@ class RolanNET(nn.Module):
         else:
             self.backbone = None
 
-        if incremental:
-            self.rolann = ROLANN_Incremental(
-                num_classes,
-                activation=activation,
-                lamb=lamb,
-                sparse=sparse,
-                dropout_rate=dropout_rate,
-                freeze_output=freeze_rolann,
-            ).to(self.device)
-        else:
-            self.rolann = ROLANN(
-                num_classes,
-                activation=activation,
-                lamb=lamb,
-                sparse=sparse,
-                dropout_rate=dropout_rate,
-            ).to(self.device)
+        self.rolann = ROLANN(
+            num_classes,
+            activation=activation,
+            lamb=lamb,
+            sparse=sparse,
+            dropout_rate=dropout_rate,
+        ).to(self.device)
+        
 
     def freeze_backbone(self, freeze_mode: str) -> None:
         if freeze_mode == "none":

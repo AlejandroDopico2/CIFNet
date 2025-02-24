@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 from sklearn.metrics import accuracy_score
 import torch
-from models.rolannet import RolanNET
+from models.CIFNet import CIFNet
 
 from torch.utils.data import Subset, random_split, DataLoader
 
@@ -95,7 +95,7 @@ def build_model(
 ):
     in_channels = 1 if dataset == "MNIST" else 3
 
-    model = RolanNET(
+    model = CIFNet(
         num_classes=2 if binary else 10,
         activation=f_act,
         lamb=rolann_lamb,

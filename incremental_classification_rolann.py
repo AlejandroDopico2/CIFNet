@@ -3,7 +3,7 @@ from torch.nn.functional import one_hot
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, Subset
 from sklearn.metrics import accuracy_score
-from models.ROLANN_incremental import ROLANN_Incremental
+from models.ROLANN import ROLANN
 from models.samplers.MemoryExpansionBuffer import MemoryExpansionBuffer
 import numpy as np
 import matplotlib.pyplot as plt
@@ -107,7 +107,7 @@ test_dataset = datasets.MNIST(
 )
 
 buffer = MemoryExpansionBuffer(memory_size_per_class)
-rolann = ROLANN_Incremental(0, activation="lin", lamb=1.0)
+rolann = ROLANN(0, activation="lin", lamb=1.0)
 
 overall_accuracies = []
 task_accuracies = {i: [] for i in range(0, num_classes_total, num_classes_per_task)}

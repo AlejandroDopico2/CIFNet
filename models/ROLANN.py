@@ -39,7 +39,7 @@ class ROLANN(nn.Module):
             self.finv = lambda x: x
             self.fderiv = lambda x: torch.ones_like(x)
 
-        self.w = None
+        self.w = []
 
         self.m = None
         self.u = None
@@ -52,8 +52,11 @@ class ROLANN(nn.Module):
         self.sparse = sparse
         self.dropout = nn.Dropout(dropout_rate)
 
-    def update_weights(self, X: Tensor, d: Tensor) -> Tensor:
-        results = [self._update_weights(X, d[:, i]) for i in range(self.num_classes)]
+    def add_num_classes(self, num_classes):
+        self.num_classes += num_classes
+
+    def update_weights(self, X: Tensor, d: Tensor, classes: Tensor) -> Tensor:
+        results = [self._update_weights(X, d[:, i]) for i in classes]
 
         ml, ul, sl = zip(*results)
 
@@ -98,12 +101,6 @@ class ROLANN(nn.Module):
 
         return M, U, S
 
-    def reset(self) -> None:
-        self.ug = []
-        self.sg = []
-        self.mg = []
-        self.w = None
-
     def forward(self, X: Tensor) -> Tensor:
         X = X.T
         n = X.size(1)
@@ -125,29 +122,23 @@ class ROLANN(nn.Module):
 
         return torch.transpose(y_hat, 0, 1)
 
-    def get_params(self):
-        return self.m, self.us
-
-    def set_params(self, w):
-        self.w = w
-
-    def _aggregate_parcial(self) -> None:
-        init = False
-        # For each class the results of each client are aggregated
-        for c in range(self.num_classes):
-            if not self.mg or init:
-                init = True
+    def _aggregate_parcial(self, classes: Tensor) -> None:
+        for i, c in enumerate(classes):
+            if c >= len(self.mg):
                 # Initialization using the first element of the list
-                M = self.m[c]
-                U = self.u[c]
-                S = self.s[c]
+                M = self.m[i]
+                U = self.u[i]
+                S = self.s[i]
+
+                self.mg.append(M)
+                self.ug.append(U)
+                self.sg.append(S)
 
             else:
-                assert self.num_classes == len(self.mg)
                 M = self.mg[c]
-                m_k = self.m[c]
-                s_k = self.s[c]
-                u_k = self.u[c]
+                m_k = self.m[i]
+                s_k = self.s[i]
+                u_k = self.u[i]
 
                 US = torch.matmul(self.ug[c], torch.diag(self.sg[c]))
 
@@ -157,59 +148,64 @@ class ROLANN(nn.Module):
                 concatenated = torch.cat((us_k, US), dim=1)
                 U, S, _ = torch.linalg.svd(concatenated, full_matrices=False)
 
-            # Save contents
-            if init:
-                self.mg.append(M)
-                self.ug.append(U)
-                self.sg.append(S)
-            else:
                 self.mg[c] = M
                 self.ug[c] = U
                 self.sg[c] = S
 
-    def _calculate_weights(self) -> None:
-        self.w = []
+    def _calculate_weights(self, classes: Tensor) -> None:
         if not self.mg or not self.ug or not self.sg:
             return None
-        else:
-            for c in range(self.num_classes):
-                M = self.mg[c]
-                U = self.ug[c]
-                S = self.sg[c]
 
-                if self.sparse:
-                    I_ones = torch.ones(S.size())
-                    I_ones_size = list(I_ones.shape)[0]
-                    I_sparse = torch.sparse.spdiags(
-                        I_ones,
-                        torch.tensor(0),
-                        (I_ones_size, I_ones_size),
-                        layout=torch.sparse_csr,
-                    )
-                    S_size = list(S.shape)[0]
-                    S_sparse = torch.sparse.spdiags(
-                        S, torch.tensor(0), (S_size, S_size), layout=torch.sparse_csr
-                    )
+        for c in classes:
+            M = self.mg[c]
+            U = self.ug[c]
+            S = self.sg[c]
 
-                    aux = (
-                        S_sparse.to_dense() * S_sparse.to_dense()
-                        + self.lamb * I_sparse.to_dense()
-                    )
-                    # Optimal weights: the order of the matrix and vector multiplications has been done to optimize the speed
-                    w = torch.matmul(
-                        U, torch.matmul(torch.linalg.pinv(aux), torch.matmul(U.T, M))
-                    )
-                else:
-                    diag_elements = 1 / (
-                        S * S + self.lamb * torch.ones_like(S, device=S.device)
-                    )
-                    diag_matrix = torch.diag(diag_elements)
-                    # Optimal weights: the order of the matrix and vector multiplications has been done to optimize the speed
-                    w = torch.matmul(U, torch.matmul(diag_matrix, torch.matmul(U.T, M)))
+            if self.sparse:
+                I_ones = torch.ones(S.size())
+                I_ones_size = list(I_ones.shape)[0]
+                I_sparse = torch.sparse.spdiags(
+                    I_ones,
+                    torch.tensor(0),
+                    (I_ones_size, I_ones_size),
+                    layout=torch.sparse_csr,
+                )
+                S_size = list(S.shape)[0]
+                S_sparse = torch.sparse.spdiags(
+                    S, torch.tensor(0), (S_size, S_size), layout=torch.sparse_csr
+                )
+
+                aux = (
+                    S_sparse.to_dense() * S_sparse.to_dense()
+                    + self.lamb * I_sparse.to_dense()
+                )
+                # Optimal weights: the order of the matrix and vector multiplications has been done to optimize the speed
+                w = torch.matmul(
+                    U, torch.matmul(torch.linalg.pinv(aux), torch.matmul(U.T, M))
+                )
+            else:
+                diag_elements = 1 / (
+                    S * S + self.lamb * torch.ones_like(S, device=S.device)
+                )
+                diag_matrix = torch.diag(diag_elements)
+                # Optimal weights: the order of the matrix and vector multiplications has been done to optimize the speed
+                w = torch.matmul(U, torch.matmul(diag_matrix, torch.matmul(U.T, M)))
+
+            if c >= len(self.w):
                 # Append optimal weights
                 self.w.append(w)
+            else:
+                self.w[c] = w
 
-    def aggregate_update(self, X: Tensor, d: Tensor, classes: Optional[int] = None):
-        self.update_weights(X, d)  # Se calculan las nuevas M y US
-        self._aggregate_parcial()  # Se agrega nuevas M y US a antiguas (globales)
-        self._calculate_weights()  # Se calcula los pesos con las nuevas
+    def aggregate_update(
+        self, X: Tensor, d: Tensor, classes: Optional[int] = None
+    ) -> None:
+        if classes is None:
+            classes = self.num_classes
+            
+
+        self.update_weights(X, d, classes)  # Se calculan las nuevas M y US
+        self._aggregate_parcial(
+            classes
+        )  # Se agrega nuevas M y US a antiguas (globales)
+        self._calculate_weights(classes)  # Se calcula los pesos con las nuevas

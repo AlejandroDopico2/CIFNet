@@ -12,101 +12,56 @@ class MemoryExpansionBuffer:
         memory_size_per_class: Optional[int],
         sampling_strategy: SamplingStrategy,
     ):
-        self.buffer: Dict[int, List[torch.Tensor]] = defaultdict(list)
-        self.memory_size_per_class = memory_size_per_class
-        self.class_count = 0
+        self.buffer: Dict[int, torch.Tensor] = defaultdict(lambda: torch.empty(0))
+        self.memory_size = memory_size_per_class
         self.classes_per_task = classes_per_task
         self.sampling_strategy = sampling_strategy
+        self.current_max_class = 0
 
-    def add_task_samples(self, x: torch.Tensor, y: torch.Tensor, task: int) -> None:
-        current_classes = set(
-            range(self.classes_per_task * task, (task + 1) * self.classes_per_task)
-        )
+    def add_task_samples(self, embeddings: torch.Tensor, labels: torch.Tensor, task: int) -> None:
+        """Add samples to buffer using vectorized operations"""
+        class_indices = torch.argmax(labels, dim=1)
 
-        for sample, label in zip(x, y):
-            label_item = torch.argmax(label).item()
+        task_start = task * self.classes_per_task
+        task_end = (task + 1) * self.classes_per_task
+        task_classes = range(task_start, task_end)
 
-            if label_item not in current_classes:
+        for task_class in task_classes:
+            mask = (class_indices == task_class)
+            task_class_embeddings = embeddings[mask].cpu()
+            
+            if task_class_embeddings.size(0) == 0:
                 continue
 
-            self.buffer[label_item].append(sample.cpu())
-            if label_item >= self.class_count:
-                self.class_count = label_item + 1
+            self.buffer[task_class] = torch.cat([self.buffer[task_class], task_class_embeddings])
+            self.current_max_class = max(self.current_max_class, task_class + 1)
 
-    def sample(self, **kwargs):
-        for label, samples in self.buffer.items():
-            if not isinstance(self.buffer[label], torch.Tensor):
-                self.buffer[label] = torch.stack(samples)
+        self._maintain_buffer()
 
-        self.buffer = self.sampling_strategy.sample(
-            buffer=self.buffer, n_samples=self.memory_size_per_class, **kwargs
-        )
+    def _maintain_buffer(self):
+        """Apply sampling strategy to maintain buffer size per class"""
+        for cls in list(self.buffer.keys()):
+            if self.buffer[cls].size(0) > self.memory_size:
+                self.buffer[cls] = self.sampling_strategy.sample(
+                    self.buffer[cls], 
+                    self.memory_size
+                )
 
-    def get_memory_samples(
-        self, classes: Optional[List[int]] = None
-    ) -> Tuple[torch.Tensor]:
-        x_memory, y_memory = [], []
-
-        if classes:
-            for label in classes:
-                if label not in self.buffer:
-                    raise ValueError("Label specified not in the buffer.")
-
-                x_memory.extend(self.buffer[label])
-                y_memory.extend([label] * len(self.buffer[label]))
-        else:
-            for label, samples in self.buffer.items():
-                x_memory.extend(samples)
-                y_memory.extend([label] * len(samples))
-
-        return torch.stack(x_memory), torch.LongTensor(y_memory)
-
-    def get_past_tasks_samples(
-        self, task_id: int, batch_size: Optional[int] = None
-    ) -> Tuple[torch.Tensor]:
-        x_memory, y_memory = [], []
-
-        if task_id >= self.class_count:
+    def get_memory_samples(self, classes: List[int]) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Efficiently retrieve samples with tensor concatenation"""
+        valid_classes = [c for c in classes if c in self.buffer]
+        
+        if not valid_classes:
             return torch.empty(0), torch.empty(0)
 
-        class_range = range(task_id * self.classes_per_task)
-        if batch_size is None:
-            for class_id in class_range:
-                x_memory.extend([x for x, _ in self.buffer[class_id]])
-                y_memory.extend([y for _, y in self.buffer[class_id]])
+        embeddings = torch.cat([self.buffer[c] for c in valid_classes])
 
-        # else: TODO Add dynamic buffer size
+        labels = torch.cat([torch.full(size=len(self.buffer[c]), fill_value=c, dtype=torch.long) for c in valid_classes])
 
-        if x_memory:  # Check if the list is not empty
-            x_memory = torch.stack(x_memory)
-            y_memory = torch.tensor(y_memory, dtype=torch.long)
-        else:
-            x_memory = torch.empty(0)
-            y_memory = torch.empty(0)
+        return embeddings, labels
 
-        if not torch.is_tensor(x_memory) or not torch.is_tensor(y_memory):
-            raise ValueError("Input must be of type torch.Tensor")
+    def get_class_distribution(self) -> Dict[int, int]:
+        return {c: len(emb) for c, emb in self.buffer.items()}
 
-        return x_memory, y_memory
-
-    def _one_hot_encode(self, labels: torch.Tensor, num_classes: int = None):
-        if num_classes is None:
-            num_classes = self.class_count
-        return torch.nn.functional.one_hot(labels, num_classes=num_classes).float()
-
-    def _expand_one_hot(self, y: torch.Tensor, num_classes: int):
-        current_classes = y.unique().size(0)
-        if num_classes > current_classes:
-            padding = torch.full((y.size(0), num_classes - current_classes), 0.05)
-            return torch.cat([y, padding], dim=1)
-        return y
-
-    def get_class_distribution(self):
-        return {label: len(samples) for label, samples in self.buffer.items()}
-
-    def clear(self):
-        self.buffer.clear()
-        self.class_count = 0
-
-    def get_num_classes(self):
-        return self.class_count
+    def __len__(self) -> int:
+        return sum(e.size(0) for e in self.buffer.values())

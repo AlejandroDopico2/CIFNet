@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from typing import Dict
 
 import numpy as np
 from scipy.stats import entropy
@@ -39,23 +40,14 @@ class AllSampling(BaseSampler):
         return torch.stack(x_memory), torch.tensor(y_memory, dtype=torch.long)
 
 
-class RandomSampling(BaseSampler):
-    def sample(self, buffer, n_samples, **kwargs):
-        new_buffer = defaultdict(list)
-
-        for label, samples in buffer.items():
-            if len(samples) <= n_samples:
-                new_buffer[label] = samples
-                continue
-
-            indices = torch.randperm(samples.size(0))[:n_samples]
-
-            sampled = samples[indices]
-
-            # new_buffer[label] = torch.cat([sampled, mixup_embeddings(sampled)])
-            new_buffer[label] = sampled
-
-        return new_buffer
+class RandomSampling:
+    def sample(self, embeddings: torch.Tensor, n_samples: int) -> torch.Tensor:
+        """Efficient random sampling for single class"""
+        if embeddings.size(0) <= n_samples:
+            return embeddings
+            
+        indices = torch.randperm(embeddings.size(0))[:n_samples]
+        return embeddings[indices]
 
 
 class EntropySampling(BaseSampler):
