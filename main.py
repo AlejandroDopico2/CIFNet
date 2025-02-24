@@ -114,11 +114,13 @@ class ExperimentRunner:
             # Track emissions
             with EmissionsTracker(
                 project_name=f"{self.config['dataset']['name']}_inc",
-                output_dir=str(self.emissions_dir)
+                output_dir=str(self.emissions_dir),
             ) as tracker:
 
-            # Execute training
-                results, train_acc, task_acc = self.trainer.train(train_dataset, test_dataset)
+                # Execute training
+                results, train_acc, task_acc = self.trainer.train(
+                    train_dataset, test_dataset
+                )
 
             print(results, train_acc, task_acc)
             # Calculate and log metrics

@@ -94,9 +94,7 @@ def main(config=None) -> Dict[str, Union[float, str]]:
     project_name = f"{config['dataset']['name']}_inc{config['incremental']['classes_per_task']}_ROLANN"
     output_dir = "rolann_emissions"
     os.makedirs(output_dir, exist_ok=True)
-    with EmissionsTracker(
-        project_name=project_name, output_dir=output_dir
-    ) as tracker:
+    with EmissionsTracker(project_name=project_name, output_dir=output_dir) as tracker:
         if config["incremental"]["use_eb"]:
             # results, task_train_accuracies, task_accuracies = train_ExpansionBuffer(
             #     model, train_dataset, test_dataset, config

@@ -13,6 +13,7 @@ def get_backbone_class(module_name: str, class_name: str) -> Type[Backbone]:
     else:
         raise ValueError(f"Class {class_name} is not a subclass of Backbone")
 
+
 def build_incremental_model(config: Dict[str, Any]) -> nn.Module:
     in_channels = 1 if config["dataset"]["name"] == "MNIST" else 3
 
