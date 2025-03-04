@@ -1,17 +1,39 @@
 # Improved and refactored code
 from collections import defaultdict
+import sys
 from typing import Any, Dict, List, Optional, Tuple
 from loguru import logger
 import torch
 import torch.nn as nn
-import torch.optim as optim
 from torch.utils.data import DataLoader, Subset, TensorDataset
 from tqdm import tqdm
 
 from incremental_dataloaders.data_preparation import prepare_data
 from models.CIFNet import CIFNet
 from models.samplers.MemoryExpansionBuffer import MemoryExpansionBuffer
-from scripts.experience_replay_incremental_train import get_sampling_strategy
+from models.samplers.SamplingStrategy import (
+    BoundarySampling,
+    CentroidSampling,
+    EntropySampling,
+    HybridSampling,
+    KMeansSampling,
+    RandomSampling,
+    TypicalitySampling,
+)
+
+sampling_strategies = {
+    "centroid": CentroidSampling,
+    "entropy": EntropySampling,
+    "kmeans": KMeansSampling,
+    "random": RandomSampling,
+    "typicality": TypicalitySampling,
+    "boundary": BoundarySampling,
+    "hybrid": HybridSampling,
+}
+
+
+def get_sampling_strategy(strategy_name):
+    return sampling_strategies.get(strategy_name.lower(), RandomSampling)
 
 
 class MetricTracker:
@@ -55,6 +77,33 @@ class MetricTracker:
             f"Accuracy: {100 * self.accuracy:.2f}%"
         )
         self.reset()
+
+    def get_last_phase_metrics(self, phase: str) -> Dict[str, float]:
+        """
+        Return the last recorded metrics (loss and accuracy) for a given phase.
+
+        Args:
+            phase (str): The phase to retrieve metrics for (e.g., "train" or "test").
+
+        Returns:
+            Dict[str, float]: A dictionary containing the last loss and accuracy for the phase.
+                              Returns `None` if no metrics are available for the phase.
+        """
+        loss_key = f"{phase}_loss"
+        accuracy_key = f"{phase}_accuracy"
+
+        if loss_key not in self.history or accuracy_key not in self.history:
+            logger.warning(f"No metrics found for phase: {phase}")
+            return None
+
+        if not self.history[loss_key] or not self.history[accuracy_key]:
+            logger.warning(f"No metrics recorded yet for phase: {phase}")
+            return None
+
+        last_loss = self.history[loss_key][-1]
+        last_accuracy = self.history[accuracy_key][-1]
+
+        return last_loss, last_accuracy
 
 
 def replicate_samples(inputs, labels, desired_size):
@@ -154,31 +203,30 @@ class CILTrainer:
         self.device = config["device"]
         self.classes_per_task = config["incremental"]["classes_per_task"]
         self.num_tasks = config["incremental"]["num_tasks"]
+        self.current_task = 0
         self.metrics = MetricTracker()
 
         self._setup_logging()
         self._initialize_components()
 
     def _setup_logging(self):
-        """Configure logging and experiment tracking"""
+        """
+        Configure detailed logging with additional context and file logging.
+        """
         logger.remove()
         logger.add(
-            lambda msg: print(msg, end=""),
+            sys.stderr,
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+            "<level>{level: <8}</level> | "
+            "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
+            "<level>{message}</level>",
+            level="INFO",
             colorize=True,
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
         )
-
-        if self.config["training"]["use_wandb"]:
-            import wandb
-
-            self.wandb = wandb
-            self.wandb.init(project="RolanNet-Model", config=self.config)
-            self.wandb.watch(self.model)
 
     def _initialize_components(self):
         """Initialize training components"""
         self.criterion = nn.CrossEntropyLoss()
-        self.optimizer = self._create_optimizer()
         self.expansion_buffer = MemoryExpansionBuffer(
             memory_size_per_class=self.config["incremental"]["buffer_size"],
             classes_per_task=self.classes_per_task,
@@ -187,48 +235,24 @@ class CILTrainer:
             )(),
         )
 
-    def _create_optimizer(self):
-        """Conditionally create optimizer based on model configuration"""
-        if self.model.backbone and not self.config["model"]["freeze_mode"] == "all":
-            return optim.Adam(
-                self.model.parameters(),
-                lr=self.config["model"]["learning_rate"],
-                weight_decay=1e-5,
-            )
-        return None
-
-    def train(
-        self, train_dataset: Subset, test_dataset: Subset
+    def train_task(
+        self, task_id: int, train_dataset: Subset, test_dataset: Subset
     ) -> Tuple[Dict, Dict, Dict]:
-        """Main training loop"""
-        results = defaultdict(list)
-        task_accuracies = {i: [] for i in range(self.num_tasks)}
-        task_train_accuracies = {}
+        """Train the model on a single task"""
 
-        for task in range(self.num_tasks):
-            self._handle_new_task(task, train_dataset)
+        # Start the task
+        self._handle_new_task(task_id, train_dataset)
 
-            # Training phases
-            train_metrics = self._train_task(task, train_dataset)
-            self._train_with_buffer(task)
+        # Training phases
+        self._train_current_task(task_id)
+        self._train_with_buffer(task_id)
 
-            # Evaluation
-            task_metrics = self._evaluate_tasks(task, test_dataset)
-            self._log_metrics(task, train_metrics, task_metrics)
+        # Evaluation
+        train_metrics = self._evaluate(self.train_loader, task_id, mode="Train")
+        task_metrics = self._evaluate_tasks(task_id, test_dataset, mode="Test")
+        self._log_metrics(task_id, train_metrics, task_metrics)
 
-            # Update results
-            task_train_accuracies[task] = train_metrics["accuracy"]
-            results.update(
-                {
-                    "test_loss": task_metrics["test_loss"],
-                    "test_accuracy": task_metrics["test_accuracy"],
-                }
-            )
-
-        if self.config["training"]["use_wandb"]:
-            self.wandb.finish()
-
-        return results, task_train_accuracies, task_accuracies
+        return {"train_metrics": train_metrics, "task_metrics": task_metrics}
 
     def _handle_new_task(self, task: int, train_dataset: Subset):
         """Prepare model and data for new task"""
@@ -259,28 +283,9 @@ class CILTrainer:
             shuffle=True,
         )
 
-    def _train_task(self, task: int, train_dataset: Subset) -> Dict[str, float]:
-        """Train the model on the current task"""
-        logger.debug(f"Training on task {task + 1}")
-
-        train_metrics = {
-            "loss": [],
-            "accuracy": [],
-        }
-
-        epoch_metrics = self._train_epoch(task)
-        train_metrics["loss"].append(epoch_metrics["loss"])
-        train_metrics["accuracy"].append(epoch_metrics["accuracy"])
-
-        return {
-            "loss": train_metrics["loss"][-1],
-            "accuracy": train_metrics["accuracy"][-1],
-        }
-
-    def _train_epoch(self, task: int) -> Dict[str, float]:
+    def _train_current_task(self, task: int) -> Dict[str, float]:
         """Train for a single epoch"""
         self.model.train()
-        self.metrics.reset()
 
         for inputs, labels in tqdm(
             self.train_loader,
@@ -292,21 +297,14 @@ class CILTrainer:
             )
 
             # Update model with current task data
-            step_result = self._train_step(
+            self._train_step(
                 inputs=inputs,
                 labels=labels,
                 task=task,
                 classes=None,
-                calculate_metrics=True,
+                calculate_metrics=False,
                 is_embedding=False,
             )
-
-            if step_result:
-                loss, correct, total = step_result
-                self.metrics.update(loss, correct, total)
-
-        self.metrics.log_epoch("train", task + 1)
-        return {"loss": self.metrics.avg_loss, "accuracy": self.metrics.accuracy}
 
     def _train_with_buffer(self, task: int):
         """Train using the expansion buffer"""
@@ -354,16 +352,15 @@ class CILTrainer:
                 is_embedding=True,
             )
 
-    def _evaluate_tasks(self, task: int, test_dataset: Subset) -> Dict[str, float]:
+    def _evaluate_tasks(
+        self, task: int, dataset: Subset, mode: str
+    ) -> Dict[str, float]:
         """Evaluate the model on all tasks seen so far"""
-        test_metrics = {
-            "test_loss": [],
-            "test_accuracy": [],
-        }
+        metrics = defaultdict(list)
 
         for eval_task in range(task + 1):
-            test_subset = prepare_data(
-                test_dataset,
+            subset = prepare_data(
+                dataset,
                 class_range=range(
                     eval_task * self.classes_per_task,
                     (eval_task + 1) * self.classes_per_task,
@@ -371,17 +368,17 @@ class CILTrainer:
                 samples_per_task=None,
             )
 
-            test_loader = DataLoader(
-                test_subset,
+            loader = DataLoader(
+                subset,
                 batch_size=self.config["dataset"]["batch_size"],
-                shuffle=True,
+                shuffle=False,
             )
 
-            test_loss, test_accuracy = self._evaluate(test_loader, eval_task)
-            test_metrics["test_loss"].append(test_loss)
-            test_metrics["test_accuracy"].append(test_accuracy)
+        loss, accuracy = self._evaluate(loader, eval_task, mode=mode)
+        metrics["loss"].append(loss)
+        metrics["accuracy"].append(accuracy)
 
-        return test_metrics
+        return metrics
 
     def _evaluate(
         self, data_loader: DataLoader, task: int, mode: str = "Test"
@@ -404,7 +401,7 @@ class CILTrainer:
 
         # Log and store evaluation metrics
         self.metrics.log_epoch(mode.lower(), task + 1)
-        return self.metrics.avg_loss, self.metrics.accuracy
+        return self.metrics.get_last_phase_metrics(mode.lower())
 
     def _log_metrics(self, task: int, train_metrics: Dict, task_metrics: Dict):
         """Log metrics to logger and WandB"""

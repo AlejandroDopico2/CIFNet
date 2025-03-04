@@ -1,16 +1,20 @@
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 import yaml
 from loguru import logger
 from codecarbon import EmissionsTracker
+from torch.utils.data import Subset
 
-from utils.data_utils import get_dataset_instance
-from scripts.train_cifnet import CILTrainer
+from incremental_dataloaders.data_preparation import get_dataset_instance
+from train_cifnet import CILTrainer
 from utils.model_utils import build_incremental_model
-from utils.plotting import plot_task_accuracies
-from utils.utils import calculate_cl_metrics
+from utils.plotting import (
+    plot_mean_accuracy_progression,
+    calculate_cl_metrics,
+    plot_task_progression,
+)
 
 
 class ExperimentRunner:
@@ -90,43 +94,63 @@ class ExperimentRunner:
         logger.info("=" * 50)
 
     def _setup_wandb(self):
-        """Initialize Weights & Biases tracking if enabled"""
+        """Initialize Weights & Biases tracking if enabled in the configuration."""
         if self.config["training"]["use_wandb"]:
             import wandb
 
             wandb.init(
-                project="RolanNet-Model", config=self.config, dir=str(self.output_dir)
+                project=self.config["training"].get(
+                    "wandb_project", "CIFNet-Experiment"
+                ),
+                config=self.config,
+                dir=str(self.output_dir),
+                name=self.config["training"].get("wandb_run_name", None),
+                reinit=True,
             )
 
-            wandb.watch(self.model)
+            if self.config["training"].get("wandb_watch_model", False):
+                wandb.watch(self.model, log="all", log_freq=100)
+
+            logger.info("Weights & Biases tracking initialized.")
+        else:
+            logger.info("Weights & Biases tracking is disabled.")
 
     def run(self) -> Dict[str, float]:
         """Execute full experiment pipeline"""
         try:
+            logger.info("Starting experiment")
             self._log_config()
+
             # Initialize components
             train_dataset, test_dataset = get_dataset_instance(
                 self.config["dataset"]["name"]
             )
             self.model = build_incremental_model(self.config)
             self.trainer = CILTrainer(model=self.model, config=self.config)
+            num_tasks = self.config["incremental"]["num_tasks"]
+
+            # Initialize tracking
+            task_accuracies = {i: [] for i in range(num_tasks)}
+
+            self._setup_wandb()
 
             # Track emissions
-            with EmissionsTracker(
-                project_name=f"{self.config['dataset']['name']}_inc",
-                output_dir=str(self.emissions_dir),
-            ) as tracker:
-
-                # Execute training
-                results, train_acc, task_acc = self.trainer.train(
-                    train_dataset, test_dataset
+            if self.config["training"].get("use_codecarbon", False):
+                with EmissionsTracker(
+                    project_name=f"{self.config['dataset']['name']}_inc",
+                    output_dir=str(self.emissions_dir),
+                ) as tracker:
+                    self._run_training_loop(
+                        num_tasks, train_dataset, test_dataset, task_accuracies
+                    )
+            else:
+                self._run_training_loop(
+                    num_tasks, train_dataset, test_dataset, task_accuracies
                 )
 
-            print(results, train_acc, task_acc)
-            # Calculate and log metrics
-            cl_metrics = calculate_cl_metrics(task_acc)
-            self._save_results(cl_metrics, task_acc)
-            self._generate_plots(train_acc, task_acc)
+            cl_metrics = calculate_cl_metrics(task_accuracies)
+            self._save_results(cl_metrics, task_accuracies)
+            self._generate_plots(cl_metrics, task_accuracies)
 
             return cl_metrics
 
@@ -134,18 +158,40 @@ class ExperimentRunner:
             logger.error(f"Experiment failed: {str(e)}")
             raise
 
-    def _save_results(self, cl_metrics: Dict, task_acc: Dict):
-        """Save results to output directory"""
+    def _run_training_loop(
+        self,
+        num_tasks: int,
+        train_dataset: Subset,
+        test_dataset: Subset,
+        task_accuracies: Dict[int, List[float]],
+    ):
+        """Core training loop implementation"""
+        for task in range(num_tasks):
+            task_results = self.trainer.train_task(task, train_dataset, test_dataset)
+
+            # Update metrics
+            for t in range(task + 1):
+                task_accuracies[t].append(task_results["task_metrics"]["accuracy"][t])
+
+            # Log intermediate results
+            if self.config["training"]["use_wandb"]:
+                self._log_wandb_metrics(task, task_results, task_accuracies)
+
+    def _save_results(self, cl_metrics: Dict, task_accuracies: Dict[int, List[float]]):
+        """Save results with additional metrics"""
         result_data = {
-            **cl_metrics,
+            "A_B": cl_metrics["A_B"],
+            "mean_accuracies": cl_metrics["mean_accuracy"],
+            "final_accuracies": cl_metrics["final_accuracies"],
+            "task_accuracies": task_accuracies,
             **self._get_hyperparams(),
             "emissions": self._get_emissions_data(),
         }
 
         # Save JSON files
         (self.output_dir / "results.json").write_text(json.dumps(result_data, indent=4))
-        (self.output_dir / "task_accuracies.json").write_text(
-            json.dumps(task_acc, indent=4)
+        (self.output_dir / "detailed_metrics.json").write_text(
+            json.dumps(task_accuracies, indent=4)
         )
 
     def _get_hyperparams(self) -> Dict:
@@ -164,16 +210,20 @@ class ExperimentRunner:
             return {"emissions_file": str(emissions_file)}
         return {}
 
-    def _generate_plots(self, train_acc: Dict, task_acc: Dict):
-        """Generate and save accuracy plots"""
-        plot_path = self.output_dir / "accuracy_plot.png"
-        plot_task_accuracies(
-            train_acc,
-            task_acc,
-            self.config["incremental"]["num_tasks"],
-            save_path=str(plot_path),
-        )
-        logger.info(f"Saved accuracy plot to: {plot_path}")
+    def _generate_plots(
+        self, cl_metrics: Dict, task_accuracies: Dict[int, List[float]]
+    ):
+        """Generate and save all required plots"""
+        # Task progression plot
+        task_plot_path = self.output_dir / "task_accuracy_progression.png"
+        plot_task_progression(task_accuracies, str(task_plot_path))
+
+        # Mean accuracy plot
+        mean_plot_path = self.output_dir / "mean_accuracy_progression.png"
+        plot_mean_accuracy_progression(cl_metrics["mean_accuracy"], str(mean_plot_path))
+
+        logger.info(f"Saved task progression plot to: {task_plot_path}")
+        logger.info(f"Saved mean accuracy plot to: {mean_plot_path}")
 
 
 if __name__ == "__main__":

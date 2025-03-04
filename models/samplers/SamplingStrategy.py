@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from typing import Dict
 
 import numpy as np
 from scipy.stats import entropy

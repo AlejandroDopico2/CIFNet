@@ -1,6 +1,6 @@
-from typing import Optional
 import matplotlib.pyplot as plt
 import numpy as np
+from typing import Any, Dict, List, Optional
 
 
 def plot_results(results, save_path: Optional[str] = None):
@@ -155,3 +155,94 @@ def plot_average_accuracy(
     # Save and show plot
     plt.savefig(save_path)
     plt.show()
+
+
+# ----------------------------------------------------------------
+#   Metrics and Plotting Functions
+# ----------------------------------------------------------------
+
+
+def calculate_cl_metrics(task_accuracies: Dict[int, List[float]]) -> Dict[str, Any]:
+    """
+    Calculate continual learning metrics including:
+    - A_B: Final accuracy across all tasks
+    - 𝛿𝐴: Mean accuracy at each training phase
+    """
+    num_tasks = len(task_accuracies)
+    mean_accuracies = []
+    phase_accuracies = []
+
+    # Calculate metrics for each training phase
+    for phase in range(num_tasks):
+        current_accuracies = []
+
+        # Collect accuracies for all tasks up to current phase
+        for task in range(phase + 1):
+            # Get the accuracy at the corresponding phase index for each task
+            # Task 0 has been seen in (phase + 1) phases, Task 1 in phase phases, etc.
+            acc = task_accuracies[task][phase - task]
+            current_accuracies.append(acc)
+
+        phase_accuracies.append(current_accuracies)
+        mean_accuracies.append(np.mean(current_accuracies))
+
+    # Calculate final accuracy (A_B)
+    final_accuracies = [task_accuracies[k][-1] for k in range(num_tasks)]
+    A_B = np.mean(final_accuracies)
+
+    return {
+        "A_B": A_B,
+        "mean_accuracy": mean_accuracies,
+        "phase_accuracies": phase_accuracies,
+        "final_accuracies": final_accuracies,
+    }
+
+
+def plot_task_progression(task_accuracies: Dict[int, List[float]], save_path: str):
+    """Plot accuracy progression for each task with aligned phase indices"""
+    plt.figure(figsize=(12, 6))
+    num_tasks = len(task_accuracies)
+
+    for task in range(num_tasks):
+        # Plot from the phase when the task was introduced
+        phases = range(task, num_tasks)
+        plt.plot(
+            phases,
+            task_accuracies[task],
+            label=f"Task {task}",
+            marker="o",
+            linestyle="--",
+        )
+
+    plt.xlabel("Training Phase")
+    plt.ylabel("Accuracy")
+    plt.title("Task-wise Accuracy Progression")
+    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+
+
+def plot_mean_accuracy_progression(mean_accuracies: List[float], save_path: str):
+    """Plot progression of mean accuracy with phase alignment"""
+    plt.figure(figsize=(10, 6))
+    plt.plot(
+        range(len(mean_accuracies)),
+        mean_accuracies,
+        marker="s",
+        color="darkorange",
+        linestyle="-",
+        linewidth=2,
+        markersize=8,
+    )
+
+    plt.xlabel("Training Phase")
+    plt.ylabel("Mean Accuracy")
+    plt.title(r"Cumulative Mean Accuracy Progression ($\bar{A}$)")
+    plt.grid(True)
+    plt.xticks(range(len(mean_accuracies)))
+    plt.ylim(0, 1)
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()

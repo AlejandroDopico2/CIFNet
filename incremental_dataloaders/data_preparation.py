@@ -1,9 +1,25 @@
 import torch
 import numpy as np
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from torch.utils.data import Dataset
 
 from incremental_dataloaders.custom_datasets import TensorSubset
+from incremental_dataloaders.datasets import (
+    BaseDataset,
+    CIFAR100Dataset,
+    CIFAR10Dataset,
+    ImageNet100Dataset,
+    MNISTDataset,
+    TinyImageNetDataset,
+)
+
+DATASET_CLASSES = {
+    "MNIST": MNISTDataset,
+    "CIFAR10": CIFAR10Dataset,
+    "CIFAR100": CIFAR100Dataset,
+    "TinyImageNet": TinyImageNetDataset,
+    "ImageNet100": ImageNet100Dataset,
+}
 
 
 def prepare_data(
@@ -38,3 +54,30 @@ def prepare_data(
         class_indices = torch.cat(class_indices)
 
     return TensorSubset(dataset, class_indices)
+
+
+def get_dataset_instance(
+    dataset_name: str, root: str = "./data", img_size: int = 224
+) -> Tuple[BaseDataset, BaseDataset]:
+    """
+    Instantiate and return train and test dataset instances based on dataset name.
+
+    Args:
+        dataset_name (str): The name of the dataset.
+        root (str): The root directory for storing dataset files.
+        img_size (int): Image size to be used in transforms.
+
+    Returns:
+        Tuple[BaseDataset, BaseDataset]: Train and test dataset instances.
+    """
+    # Retrieve the dataset class from the dictionary
+    dataset_class = DATASET_CLASSES.get(dataset_name)
+
+    if not dataset_class:
+        raise ValueError(f"Dataset '{dataset_name}' is not supported.")
+
+    # Instantiate the dataset for train and test
+    train_dataset = dataset_class(root=root, train=True, img_size=img_size)
+    test_dataset = dataset_class(root=root, train=False, img_size=img_size)
+
+    return train_dataset, test_dataset
