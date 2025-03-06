@@ -1,0 +1,11 @@
+codecarbon
+loguru
+matplotlib==3.8.3
+numpy
+scikit-image==0.24.0
+scikit-learn
+seaborn==0.13.2
+torch==2.2.1
+torchvision==0.17.1
+tqdm
+wandb
