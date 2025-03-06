@@ -374,9 +374,9 @@ class CILTrainer:
                 shuffle=False,
             )
 
-        loss, accuracy = self._evaluate(loader, eval_task, mode=mode)
-        metrics["loss"].append(loss)
-        metrics["accuracy"].append(accuracy)
+            loss, accuracy = self._evaluate(loader, eval_task, mode=mode)
+            metrics["loss"].append(loss)
+            metrics["accuracy"].append(accuracy)
 
         return metrics
 
