@@ -285,7 +285,7 @@ class CILTrainer:
 
     def _train_current_task(self, task: int) -> Dict[str, float]:
         """Train for a single epoch"""
-        self.model.train()
+        self.model.eval()
 
         for inputs, labels in tqdm(
             self.train_loader,
