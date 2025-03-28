@@ -1,4 +1,4 @@
-# CIFNet: Class and Incremental Frugal Network
+# CIFNet: Class Incremental Frugal Network
 
 [![LICENSE](https://img.shields.io/badge/license-MIT-green?style=flat-square)](https://github.com/AlejandroDopico2/CIFNet/blob/main/LICENSE)
 ![Python 3.9](https://img.shields.io/badge/Python-3.9-blue)
@@ -6,7 +6,7 @@
 ![PEP-8](https://img.shields.io/badge/code%20style-PEP--8-green)
 
 
-CIFNet (Class and Incremental Frugal Network) is an efficient approach to **Class Incremental Learning (CIL)** that achieves state-of-the-art accuracy while significantly reducing training time and energy consumption. Designed for resource-constrained environments, CIFNet is particularly suitable for edge devices where computational efficiency is critical.
+CIFNet (Class Incremental Frugal Network) is an efficient approach to **Class Incremental Learning (CIL)** that achieves state-of-the-art accuracy while significantly reducing training time and energy consumption. Designed for resource-constrained environments, CIFNet is particularly suitable for edge devices where computational efficiency is critical.
 
 The method introduces a **single-step optimization process** and a **compressed buffer mechanism** that stores condensed representations of previous data samples, drastically reducing memory requirements. Unlike traditional methods that require multiple training iterations, CIFNet achieves optimal performance in a single pass, making it ideal for real-time applications. CIFNet is particularly well-suited for applications in **edge computing**, where rapid adaptation to new classes and efficient resource utilization are essential.
 
