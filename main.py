@@ -170,12 +170,12 @@ class ExperimentRunner:
             task_results = self.trainer.train_task(task, train_dataset, test_dataset)
 
             # Update metrics
-            for t in range(task + 1):
-                task_accuracies[t].append(task_results["task_metrics"]["accuracy"][t])
+            # for t in range(task + 1):
+            #     task_accuracies[t].append(task_results["task_metrics"]["accuracy"][t])
 
-            # Log intermediate results
-            if self.config["training"]["use_wandb"]:
-                self._log_wandb_metrics(task, task_results, task_accuracies)
+            # # Log intermediate results
+            # if self.config["training"]["use_wandb"]:
+            #     self._log_wandb_metrics(task, task_results, task_accuracies)
 
     def _save_results(self, cl_metrics: Dict, task_accuracies: Dict[int, List[float]]):
         """Save results with additional metrics"""

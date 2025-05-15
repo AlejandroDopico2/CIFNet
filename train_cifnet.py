@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset, TensorDataset
 from tqdm import tqdm
+import wandb
 
 from incremental_dataloaders.data_preparation import prepare_data
 from models.CIFNet import CIFNet
@@ -407,17 +408,17 @@ class CILTrainer:
         """Log metrics to logger and WandB"""
         if self.config["training"]["use_wandb"]:
             log_data = {
-                f"train_accuracy_task_{task + 1}": train_metrics["accuracy"],
-                f"train_loss_task_{task + 1}": train_metrics["loss"],
-                f"test_accuracy_task_{task + 1}": task_metrics["test_accuracy"][-1],
-                f"test_loss_task_{task + 1}": task_metrics["test_loss"][-1],
+                f"train_accuracy_task_{task + 1}": train_metrics[1] * 100,
+                f"train_loss_task_{task + 1}": train_metrics[0],
+                f"test_accuracy_task_{task + 1}": task_metrics["accuracy"][-1] * 100,
+                f"test_loss_task_{task + 1}": task_metrics["loss"][-1],
             }
 
             # Add historical metrics
             for metric, values in self.metrics.history.items():
                 log_data[metric] = values[-1] if values else 0.0
 
-            self.wandb.log(log_data)
+            wandb.log(log_data)
 
     def _train_step(
         self,

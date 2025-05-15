@@ -1,6 +1,6 @@
 dataset:
-  name: CIFAR10
-  batch_size: 128
+  name: CIFAR100
+  batch_size: 256
 model:
   backbone: ResNet18
   pretrained: true
@@ -12,8 +12,8 @@ rolann:
   dropout_rate: 0.0
   freeze_rolann: false
 incremental:
-  num_tasks: 5
-  classes_per_task: 2
+  num_tasks: 10
+  classes_per_task: 10
   initial_tasks: 1
   samples_per_task: null
   buffer_size: 200
@@ -21,7 +21,7 @@ incremental:
   sampling_strategy: random
 training:
   epochs: 10
-  use_wandb: false
+  use_wandb: True
   patience: null
-output_dir: "CIFAR10ResNet18k5"
+output_dir: "experiments/03_21/CIFAR100_k20_ResNet18"
 device: "cuda"
