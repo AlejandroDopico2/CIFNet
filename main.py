@@ -180,6 +180,8 @@ class ExperimentRunner:
 
                 wandb.log(wandb_log)
 
+                wandb.finish()
+
             self._save_results(cl_metrics, self.task_accuracies)
             self._generate_plots(cl_metrics, self.task_accuracies)
 
