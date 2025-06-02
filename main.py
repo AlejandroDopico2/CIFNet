@@ -1,6 +1,7 @@
 import argparse
 import json
 from pathlib import Path
+from turtle import pd
 from typing import Dict, Any, List, Optional
 import numpy as np
 import yaml
@@ -161,6 +162,21 @@ class ExperimentRunner:
 
                 for i, acc in enumerate(cl_metrics["mean_accuracy"]):
                     wandb.log({"accuracy": acc}, step = i)
+
+                if self.config["training"].get("use_codecarbon", False):
+                    emissions_file = self.emissions_dir / "emissions.csv"
+                    if emissions_file.exists():
+                        emissions_df = pd.read_csv(emissions_file)
+                        latest_run = emissions_df.iloc[-1]
+                        duration_min = latest_run["duration"] / 60
+                        emissions_kg = latest_run["emissions"]
+                        energy_kwh = latest_run["energy_consumed"]
+
+                        wandb_log.update({
+                            "training_time_min": duration_min,
+                            "emissions_kg": emissions_kg,
+                            "energy_consumed_kwh": energy_kwh,
+                        })
 
                 wandb.log(wandb_log)
 
