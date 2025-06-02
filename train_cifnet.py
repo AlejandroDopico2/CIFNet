@@ -238,7 +238,7 @@ class CILTrainer:
 
     def train_task(
         self, task_id: int, train_dataset: Subset, test_dataset: Subset
-    ) -> Tuple[Dict, Dict, Dict]:
+    ) -> Dict[str, List[float]]:
         """Train the model on a single task"""
 
         # Start the task
@@ -249,11 +249,9 @@ class CILTrainer:
         self._train_with_buffer(task_id)
 
         # Evaluation
-        train_metrics = self._evaluate(self.train_loader, task_id, mode="Train")
-        task_metrics = self._evaluate_tasks(task_id, test_dataset, mode="Test")
-        self._log_metrics(task_id, train_metrics, task_metrics)
+        test_metrics = self._evaluate_tasks(task_id, test_dataset, mode="Test")
 
-        return {"train_metrics": train_metrics, "task_metrics": task_metrics}
+        return test_metrics
 
     def _handle_new_task(self, task: int, train_dataset: Subset):
         """Prepare model and data for new task"""
@@ -355,7 +353,7 @@ class CILTrainer:
 
     def _evaluate_tasks(
         self, task: int, dataset: Subset, mode: str
-    ) -> Dict[str, float]:
+    ) -> Dict[str, List[float]]:
         """Evaluate the model on all tasks seen so far"""
         metrics = defaultdict(list)
 

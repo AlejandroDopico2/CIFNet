@@ -165,7 +165,7 @@ def plot_average_accuracy(
 def calculate_cl_metrics(task_accuracies: Dict[int, List[float]]) -> Dict[str, Any]:
     """
     Calculate continual learning metrics including:
-    - A_B: Final accuracy across all tasks
+    - final_accuracy: Final accuracy across all tasks
     - 𝛿𝐴: Mean accuracy at each training phase
     """
     num_tasks = len(task_accuracies)
@@ -186,12 +186,12 @@ def calculate_cl_metrics(task_accuracies: Dict[int, List[float]]) -> Dict[str, A
         phase_accuracies.append(current_accuracies)
         mean_accuracies.append(np.mean(current_accuracies))
 
-    # Calculate final accuracy (A_B)
+    # Calculate final accuracy (final_accuracy)
     final_accuracies = [task_accuracies[k][-1] for k in range(num_tasks)]
-    A_B = np.mean(final_accuracies)
+    final_accuracy = np.mean(final_accuracies)
 
     return {
-        "A_B": A_B,
+        "final_accuracy": final_accuracy,
         "mean_accuracy": mean_accuracies,
         "phase_accuracies": phase_accuracies,
         "final_accuracies": final_accuracies,

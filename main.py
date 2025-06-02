@@ -2,6 +2,7 @@ import argparse
 import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+import numpy as np
 import yaml
 from loguru import logger
 from codecarbon import EmissionsTracker
@@ -130,7 +131,7 @@ class ExperimentRunner:
             num_tasks = self.config["incremental"]["num_tasks"]
 
             # Initialize tracking
-            task_accuracies = {i: [] for i in range(num_tasks)}
+            self.task_accuracies = {i: [] for i in range(num_tasks)}
 
             self._setup_wandb()
 
@@ -141,16 +142,30 @@ class ExperimentRunner:
                     output_dir=str(self.emissions_dir),
                 ) as tracker:
                     self._run_training_loop(
-                        num_tasks, train_dataset, test_dataset, task_accuracies
+                        num_tasks, train_dataset, test_dataset
                     )
             else:
                 self._run_training_loop(
-                    num_tasks, train_dataset, test_dataset, task_accuracies
+                    num_tasks, train_dataset, test_dataset
                 )
 
-            cl_metrics = calculate_cl_metrics(task_accuracies)
-            self._save_results(cl_metrics, task_accuracies)
-            self._generate_plots(cl_metrics, task_accuracies)
+            cl_metrics = calculate_cl_metrics(self.task_accuracies)
+
+            if self.config["training"].get("use_wandb", False):
+                import wandb
+                # Flatten the cl_metrics dictionary if needed
+                wandb_log = {
+                    "final_accuracy": cl_metrics["final_accuracy"],
+                    "mean_accuracy": np.mean(cl_metrics["mean_accuracy"]),
+                }
+
+                for i, acc in enumerate(cl_metrics["mean_accuracy"]):
+                    wandb.log({"accuracy": acc}, step = i)
+
+                wandb.log(wandb_log)
+
+            self._save_results(cl_metrics, self.task_accuracies)
+            self._generate_plots(cl_metrics, self.task_accuracies)
 
             return cl_metrics
 
@@ -163,24 +178,20 @@ class ExperimentRunner:
         num_tasks: int,
         train_dataset: Subset,
         test_dataset: Subset,
-        task_accuracies: Dict[int, List[float]],
     ):
         """Core training loop implementation"""
         for task in range(num_tasks):
-            task_results = self.trainer.train_task(task, train_dataset, test_dataset)
+            test_metrics = self.trainer.train_task(task, train_dataset, test_dataset)
 
             # Update metrics
-            # for t in range(task + 1):
-            #     task_accuracies[t].append(task_results["task_metrics"]["accuracy"][t])
-
-            # # Log intermediate results
-            # if self.config["training"]["use_wandb"]:
-            #     self._log_wandb_metrics(task, task_results, task_accuracies)
+            for eval_task in range(task + 1):
+                accuracy = test_metrics["accuracy"][eval_task]
+                self.task_accuracies[eval_task].append(accuracy)
 
     def _save_results(self, cl_metrics: Dict, task_accuracies: Dict[int, List[float]]):
         """Save results with additional metrics"""
         result_data = {
-            "A_B": cl_metrics["A_B"],
+            "final_accuracy": cl_metrics["final_accuracy"],
             "mean_accuracies": cl_metrics["mean_accuracy"],
             "final_accuracies": cl_metrics["final_accuracies"],
             "task_accuracies": task_accuracies,

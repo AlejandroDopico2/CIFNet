@@ -1,22 +1,38 @@
+
 from abc import ABC, abstractmethod
 
 import torch.nn as nn
 from torch import Tensor
 from torchvision import models
-
+import torch
+import timm
 
 class Backbone(ABC, nn.Module):
     def __init__(self):
         super(Backbone, self).__init__()
+        self.backbone_type = "cnn"
 
     @abstractmethod
     def set_input_channels(self, channels: int):
         pass
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.model(x)
+        with torch.no_grad():
+            return self.model(x)
 
+class VitBackbone(Backbone):
+    def __init__(self, pretrained: bool = True):
+        super(VitBackbone, self).__init__()
+        self.backbone_type = "vit"
+        self.model = timm.create_model("vit_base_patch16_224",pretrained=True, num_classes=0)
+        self.out_dim = 768
+        self.model.eval()
 
+        for p in self.model.parameters():
+            p.requires_grad = False
+
+    def set_input_channels(self, channels: int):
+        pass
 class ResNet18Backbone(Backbone):
     def __init__(self, pretrained: bool = True):
         super(ResNet18Backbone, self).__init__()
