@@ -2,7 +2,7 @@
 
 [![LICENSE](https://img.shields.io/badge/license-MIT-green?style=flat-square)](https://github.com/AlejandroDopico2/CIFNet/blob/main/LICENSE)
 ![Python 3.9](https://img.shields.io/badge/Python-3.9-blue)
-[![PyTorch](https://img.shields.io/badge/pytorch-2.2.1-%237732a8?style=flat-square&logo=PyTorch&color=EE4C2C)](https://pytorch.org/)
+[![PyTorch](https://img.shields.io/badge/pytorch-2.7.1-%237732a8?style=flat-square&logo=PyTorch&color=EE4C2C)](https://pytorch.org/)
 ![PEP-8](https://img.shields.io/badge/code%20style-PEP--8-green)
 
 
