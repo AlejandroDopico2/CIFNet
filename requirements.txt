@@ -5,7 +5,7 @@ numpy
 scikit-image==0.24.0
 scikit-learn
 seaborn==0.13.2
-torch==2.2.1
-torchvision==0.17.1
+torch==2.7.1+cu126
+torchvision==0.22.1+cu126
 tqdm
 wandb
