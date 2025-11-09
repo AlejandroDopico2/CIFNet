@@ -1,6 +1,6 @@
 # CIFNet: Class Incremental Frugal Network
 
-[![arXiv](https://img.shields.io/badge/arXiv-2501.12345-b31b1b?style=flat-square)](https://arxiv.org/abs/2501.12345)
+[![arXiv](https://img.shields.io/badge/arXiv-2509.11285-b31b1b?style=flat-square)](https://arxiv.org/abs/2509.11285)
 [![LICENSE](https://img.shields.io/badge/license-MIT-green?style=flat-square)](https://github.com/AlejandroDopico2/CIFNet/blob/main/LICENSE)
 ![Python 3.9](https://img.shields.io/badge/Python-3.9-blue)
 [![PyTorch](https://img.shields.io/badge/pytorch-2.7.1-%237732a8?style=flat-square&logo=PyTorch&color=EE4C2C)](https://pytorch.org/)
