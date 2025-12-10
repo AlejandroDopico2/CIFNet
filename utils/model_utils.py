@@ -27,14 +27,10 @@ def build_incremental_model(config: Dict[str, Any]) -> nn.Module:
     model = CIFNet(
         num_classes=0,
         activation="logs",
-        lamb=config["rolann"]["rolann_lamb"],
         pretrained=config["model"]["pretrained"],
         backbone=backbone,
         in_channels=in_channels,
-        sparse=config["rolann"]["sparse"],
-        dropout_rate=config["rolann"]["dropout_rate"],
         device=config["device"],
-        freeze_mode=config["model"]["freeze_mode"],
     ).to(config["device"])
 
     return model

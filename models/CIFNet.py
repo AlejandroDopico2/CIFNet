@@ -16,7 +16,6 @@ class CIFNet(nn.Module):
         in_channels: int = 3,
         sparse: bool = False,
         device: str = "cuda",
-        dropout_rate: float = 0.0,
         freeze_mode: str = "all",
     ) -> None:
         super(CIFNet, self).__init__()
@@ -35,7 +34,6 @@ class CIFNet(nn.Module):
             activation=activation,
             lamb=lamb,
             sparse=sparse,
-            dropout_rate=dropout_rate,
         ).to(self.device)
 
     def freeze_backbone(self, freeze_mode: str) -> None:

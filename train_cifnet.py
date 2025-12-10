@@ -8,6 +8,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Subset, TensorDataset
 from tqdm import tqdm
 import wandb
+import numpy as np
 
 from incremental_dataloaders.data_preparation import prepare_data
 from models.CIFNet import CIFNet
@@ -273,7 +274,7 @@ class CILTrainer:
         subset = prepare_data(
             dataset,
             class_range=classes,
-            samples_per_task=self.config["incremental"]["samples_per_task"],
+            samples_per_task=None,
         )
 
         return DataLoader(
@@ -376,6 +377,8 @@ class CILTrainer:
             loss, accuracy = self._evaluate(loader, eval_task, mode=mode)
             metrics["loss"].append(loss)
             metrics["accuracy"].append(accuracy)
+
+        logger.info(f"Task {task + 1} - Mean Accuracy: {np.mean(metrics['accuracy']) * 100:.2f}%")
 
         return metrics
 

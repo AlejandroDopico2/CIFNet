@@ -21,7 +21,6 @@ class ROLANN(nn.Module):
         lamb: float = 0.01,
         activation: str = "logs",
         sparse: bool = False,
-        dropout_rate: float = 0.0,
     ):
         super(ROLANN, self).__init__()
 
@@ -55,8 +54,6 @@ class ROLANN(nn.Module):
         self.ug: List[Tensor] = []
         self.sg: List[Tensor] = []
 
-        self.dropout = nn.Dropout(dropout_rate)
-        
         if self.sparse:
             print("Warning: Sparse mode is not optimized for GPU parallelization and has been disabled in the parallel implementation of _calculate_weights.")
 
@@ -122,7 +119,7 @@ class ROLANN(nn.Module):
         W = torch.stack(self.w, dim=0)
 
         # (num_classes, features) @ (features, samples) -> (num_classes, samples)
-        y_hat = self.f(torch.matmul(W, self.dropout(xp)))
+        y_hat = self.f(torch.matmul(W, xp))
 
         return y_hat.T
 
