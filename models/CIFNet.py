@@ -8,6 +8,7 @@ from models.classifiers import (
 from models.backbone import Backbone
 import torch.nn as nn
 import torch
+import torch.nn.functional as F
 from typing import Optional, Dict
 
 
@@ -25,13 +26,14 @@ class CIFNet(nn.Module):
         freeze_mode: str = "all",
         classifier_type: str = "rolann",
         classifier_kwargs: Optional[Dict] = None,
+        normalize: bool = True,
     ) -> None:
         super(CIFNet, self).__init__()
 
         self.device = device
         self.classifier_type = classifier_type.lower()
         self.classifier_kwargs = classifier_kwargs or {}
-
+        self.normalize = normalize
         if backbone is not None:
             self.backbone = backbone(pretrained).to(self.device)
             self.backbone.set_input_channels(in_channels)
@@ -48,6 +50,10 @@ class CIFNet(nn.Module):
         )
         # Backwards-compatibility alias
         self.rolann = self.classifier
+
+        self.register_buffer("running_mean", torch.zeros(1, 512)) # feature_dim=768 for ViT
+        self.navg = 0
+
 
     def freeze_backbone(self, freeze_mode: str) -> None:
         if freeze_mode == "none":
@@ -73,10 +79,36 @@ class CIFNet(nn.Module):
                 f"Invalid freeze_mode: {freeze_mode}. Choose 'none', 'all', or 'partial'."
             )
 
+    def preprocess(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Applies L2 normalization and centering. 
+        Crucial for ViT backbones to combat feature anisotropy.
+        """
+        # 1. L2 Normalization (Project to hypersphere)
+        if self.normalize:
+            x = F.normalize(x, p=2, dim=-1)
+
+        # 2. Centering (Subtract running mean)
+        # Note: We update the mean only during training/aggregation
+        if self.training:
+            n = x.size(0)
+            # Ensure running_mean is on the correct device
+            if self.running_mean.device != x.device:
+                self.running_mean = self.running_mean.to(x.device)
+                
+            batch_mean = x.mean(dim=0, keepdim=True)
+            self.running_mean = (self.navg * self.running_mean + n * batch_mean) / (self.navg + n)
+            self.navg += n
+
+        return x - self.running_mean
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.backbone:
             x = x.to(self.device)
-            x = self.backbone(x).squeeze()
+            x = self.backbone(x)
+            x = x.flatten(start_dim=1)
+        
+        x = self.preprocess(x)
 
         x = x.to(self.device)
         x = self.classifier(x)
@@ -92,8 +124,8 @@ class CIFNet(nn.Module):
     ) -> None:
         if self.backbone and not is_embedding:
             x = x.to(self.device)
-            x = self.backbone(x).squeeze()
-
+            x = self.backbone(x).flatten(start_dim=1)
+        x = self.preprocess(x)
         x = x.to(self.device)
 
         self.classifier.aggregate_update(x, labels.to(self.device), classes=classes)

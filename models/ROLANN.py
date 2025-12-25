@@ -64,37 +64,25 @@ class ROLANN(nn.Module):
         """
         Computes M, U, and S for a batch of classes in parallel, removing the original loop.
         """
-        # d shape: (batch_size, num_classes_in_update)
-        # X shape: (batch_size, num_features)
         num_samples = X.size(0)
 
-        # The bias is included as the first feature. xp shape: (num_features + 1, num_samples)
-        ones = torch.ones((num_samples, 1), device=X.device)
+        ones = torch.ones((num_samples, 1), device=X.device) * 0.1
         xp = torch.cat((ones, X), dim=1).T
 
-        # Inverse and derivative calculations are now batched over classes
-        # Transpose d to have classes as the batch dimension: (num_classes_in_update, num_samples)
         d_t = d.T
         f_d = self.finv(d_t)
         derf = self.fderiv(f_d) # Shape: (num_classes_in_update, num_samples)
 
-        # Create a batched diagonal matrix F. Shape: (num_classes_in_update, num_samples, num_samples)
         F = torch.diag_embed(derf)
 
         # === PARALLELIZED SVD COMPUTATION ===
-        # H shape: (num_classes_in_update, num_features + 1, num_samples)
-        # xp (features, samples) is broadcasted across the class dimension of F
         H = torch.matmul(xp.unsqueeze(0), F)
         
         U, S, _ = torch.linalg.svd(H, full_matrices=False)
-        # U shape: (num_classes_in_update, num_features + 1, k)
-        # S shape: (num_classes_in_update, k) where k=min(features+1, samples)
 
         # === PARALLELIZED M COMPUTATION ===
-        # Reshape f_d for batched matmul: (num_classes_in_update, num_samples, 1)
         f_d_vec = f_d.unsqueeze(-1)
-        # M = xp @ F @ F @ f_d
-        M = xp.unsqueeze(0) @ F @ (F @ f_d_vec) # Shape: (num_classes_in_update, num_features + 1, 1)
+        M = xp.unsqueeze(0) @ F @ (F @ f_d_vec)
         
         self.m = M.squeeze(-1)
         self.u = U
@@ -114,11 +102,8 @@ class ROLANN(nn.Module):
         ones = torch.ones((num_samples, 1), device=X.device)
         xp = torch.cat((ones, X), dim=1).T
 
-        # === PARALLELIZED PREDICTION ===
-        # W shape: (num_classes, num_features + 1)
         W = torch.stack(self.w, dim=0)
 
-        # (num_classes, features) @ (features, samples) -> (num_classes, samples)
         y_hat = self.f(torch.matmul(W, xp))
 
         return y_hat.T
@@ -188,18 +173,13 @@ class ROLANN(nn.Module):
         U_batch = torch.stack(padded_U_list, dim=0)
         S_batch = torch.stack(padded_S_list, dim=0)
 
-        # === PARALLELIZED WEIGHT CALCULATION ===
-        # M_batch shape: (num_classes, features), needs to be (num_classes, features, 1) for bmm
-        M_vec = M_batch.unsqueeze(-1)
+        s_squared = S_batch ** 2
+        avg_energy = torch.mean(s_squared, dim=1, keepdim=True)
+        adaptive_lamb = self.lamb * avg_energy + 1e-7
 
-        s_squared = S_batch * S_batch
-        denominator = s_squared + self.lamb
-        
-        diag_elements = 1.0 / denominator
-        inv_diag_matrix = torch.diag_embed(diag_elements)
+        inv_diag_matrix = torch.diag_embed(1.0 / (s_squared + adaptive_lamb))
 
-        # w = U @ inv(S^2 + lambda) @ U.T @ M
-        ut_m = U_batch.transpose(-2, -1) @ M_vec
+        ut_m = U_batch.transpose(-2, -1) @ M_batch.unsqueeze(-1)
         w_batch = U_batch @ (inv_diag_matrix @ ut_m)
         w_batch = w_batch.squeeze(-1)
 

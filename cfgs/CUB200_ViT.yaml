@@ -1,0 +1,21 @@
+dataset:
+  name: ImageFolder
+  root: /home/alejandrodopico/Datasets/CUB_200_2011/CUB_200_2011
+  batch_size: 128
+model:
+  backbone: ViTB16
+  pretrained: true
+  activation: lin
+  normalize: true
+incremental:
+  num_tasks: 10
+  classes_per_task: 20
+  initial_tasks: 1
+  samples_per_task: null
+  buffer_size: 2000
+  use_eb: true
+  sampling_strategy: random
+training:
+  use_wandb: True
+output_dir: "./results/CUB200_ViT21k"
+device: "cuda"

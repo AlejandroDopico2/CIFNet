@@ -2,9 +2,11 @@ dataset:
   name: CIFAR100
   batch_size: 256
 model:
-  backbone: ResNet34
+  backbone: ViTB16
   pretrained: true
+  activation: lin
   normalize: true
+  lamb: 0.01
 incremental:
   num_tasks: 10
   classes_per_task: 10
@@ -14,6 +16,6 @@ incremental:
   use_eb: true
   sampling_strategy: random
 training:
-  use_wandb: false
-output_dir: "./results/CIFAR100_ResNet34/normalize"
+  use_wandb: False
+output_dir: "./results/CIFAR100_ViT/normalize2"
 device: "cuda"

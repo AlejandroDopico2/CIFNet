@@ -24,12 +24,12 @@ class ViTB16Backbone(Backbone):
     def __init__(self, pretrained: bool = True):
         super(ViTB16Backbone, self).__init__()
         self.backbone_type = "vit"
-        # self.model = models.vit_b_16(weights=models.ViT_B_16_Weights.IMAGENET1K_V1)
-        self.model = timm.create_model(
-            "vit_base_patch16_224_in21k",
-            pretrained=True
-        )
-        self.model.head = nn.Identity()
+        self.model = models.vit_b_16(weights=models.ViT_B_16_Weights.IMAGENET1K_V1)
+        # self.model = timm.create_model(
+        #     "vit_base_patch16_224_in21k",
+        #     pretrained=True
+        # )
+        self.model.heads = nn.Identity()
         self.model.eval()
         
     def set_input_channels(self, channels: int):

@@ -32,6 +32,7 @@ def build_incremental_model(config: Dict[str, Any]) -> nn.Module:
         num_classes=0,
         activation=classifier_kwargs.get("activation", "logs"),
         lamb=rolann_cfg.get("rolann_lamb", 0.01),
+        normalize=classifier_kwargs.get("normalize", True),
         sparse=rolann_cfg.get("sparse", False),
         pretrained=config["model"]["pretrained"],
         backbone=backbone,

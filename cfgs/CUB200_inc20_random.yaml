@@ -1,12 +1,12 @@
 dataset:
-  name: CIFAR100
-  batch_size: 256
+  name: ImageFolder
+  root: /home/alejandrodopico/Datasets/CUB_200_2011/CUB_200_2011
+  batch_size: 128
 model:
   backbone: ResNet34
   pretrained: true
-  normalize: true
 incremental:
-  num_tasks: 10
+  num_tasks: 20
   classes_per_task: 10
   initial_tasks: 1
   samples_per_task: null
@@ -15,5 +15,5 @@ incremental:
   sampling_strategy: random
 training:
   use_wandb: false
-output_dir: "./results/CIFAR100_ResNet34/normalize"
+output_dir: "CIFNet/CUB200"
 device: "cuda"
