@@ -21,6 +21,9 @@ from models.samplers.SamplingStrategy import (
     KMeansSampling,
     RandomSampling,
     TypicalitySampling,
+    HerdingSampling,
+    PrototypeSampling,
+    GaussianPrototypeSampling,
 )
 
 sampling_strategies = {
@@ -31,11 +34,21 @@ sampling_strategies = {
     "typicality": TypicalitySampling,
     "boundary": BoundarySampling,
     "hybrid": HybridSampling,
+    "herding": HerdingSampling,
+    "prototype": PrototypeSampling,
+    "gaussian_prototype": GaussianPrototypeSampling,
 }
 
 
-def get_sampling_strategy(strategy_name):
-    return sampling_strategies.get(strategy_name.lower(), RandomSampling)
+def get_sampling_strategy(strategy_name: str, **kwargs):
+    """
+    Return an initialized sampling strategy.
+
+    `kwargs` are forwarded to the sampler's `__init__`, e.g.:
+        get_sampling_strategy("prototype", n_prototypes=10)
+    """
+    strategy_cls = sampling_strategies.get(strategy_name.lower(), RandomSampling)
+    return strategy_cls(**kwargs) if kwargs else strategy_cls()
 
 
 class MetricTracker:
@@ -229,12 +242,15 @@ class CILTrainer:
     def _initialize_components(self):
         """Initialize training components"""
         self.criterion = nn.CrossEntropyLoss()
+        sampler_name = self.config["incremental"]["sampling_strategy"]
+        sampler_kwargs = self.config["incremental"].get("sampling_strategy_kwargs", {})
+
         self.expansion_buffer = MemoryExpansionBuffer(
-            memory_size_per_class=self.config["incremental"]["buffer_size"],
-            classes_per_task=self.classes_per_task,
+            total_memory_size=self.config["incremental"]["buffer_size"],
             sampling_strategy=get_sampling_strategy(
-                self.config["incremental"]["sampling_strategy"]
-            )(),
+                sampler_name,
+                **sampler_kwargs,
+            ),
         )
 
     def train_task(
@@ -246,8 +262,13 @@ class CILTrainer:
         self._handle_new_task(task_id, train_dataset)
 
         # Training phases
-        self._train_current_task(task_id)
-        self._train_with_buffer(task_id)
+        if self.model.classifier_type == "rolann":
+            self._train_current_task(task_id)
+            self._train_with_buffer(task_id)
+        else:
+            self._train_joint_task_and_buffer(task_id)
+
+        self.expansion_buffer._maintain_buffer()
 
         # Evaluation
         test_metrics = self._evaluate_tasks(task_id, test_dataset, mode="Test")
@@ -256,11 +277,11 @@ class CILTrainer:
 
     def _handle_new_task(self, task: int, train_dataset: Subset):
         """Prepare model and data for new task"""
-        logger.info(f"Starting task {task+1}/{self.num_tasks}")
+        logger.info(f"🚀 Starting task {task+1}/{self.num_tasks}")
         current_classes = self._get_task_classes(task)
 
         # Model adjustments
-        self.model.rolann.add_num_classes(self.classes_per_task)
+        self.model.add_num_classes(self.classes_per_task)
 
         # Data preparation
         self.train_loader = self._prepare_task_data(train_dataset, current_classes)
@@ -289,7 +310,8 @@ class CILTrainer:
 
         for inputs, labels in tqdm(
             self.train_loader,
-            desc=f"Task {task + 1}",
+            desc=f"🎯 Task {task + 1}",
+            leave=False,
         ):
             inputs, labels = inputs.to(self.device), labels.to(self.device)
             labels = torch.nn.functional.one_hot(
@@ -311,7 +333,6 @@ class CILTrainer:
         if task == 0:
             return  # No buffer for the first task
 
-        logger.debug("Training with expansion buffer")
         X_memory, Y_memory = self.expansion_buffer.get_memory_samples(
             classes=range(task * self.classes_per_task)
         )
@@ -319,7 +340,6 @@ class CILTrainer:
         if X_memory.size(0) > 0:
             # Replicate samples to balance class distribution
             class_counts = count_samples_per_class(self.train_loader)
-            logger.debug(X_memory.size())
             X_replicated, Y_replicated = replicate_samples(
                 X_memory, Y_memory, max(class_counts.values())
             )
@@ -334,10 +354,126 @@ class CILTrainer:
             # Train on replayed data
             self._train_replay(task, replay_loader)
 
+    def _train_joint_task_and_buffer(self, task: int) -> None:
+        """
+        For non-ROLANN classifiers: compute embeddings for the current task,
+        concatenate with oversampled buffer embeddings, shuffle, and train once.
+        """
+        self.model.eval()
+        class_count = (task + 1) * self.classes_per_task
+
+        # Collect current-task embeddings and add them to the buffer
+        current_embeddings, current_labels = self._collect_current_task_embeddings(
+            task, class_count
+        )
+
+        # Fetch and oversample buffer embeddings (previous classes)
+        buffer_embeddings, buffer_labels = self._get_oversampled_buffer(task, class_count)
+
+        if current_embeddings.numel() == 0 and buffer_embeddings.numel() == 0:
+            return
+
+        if buffer_embeddings.numel() > 0:
+            buffer_labels = torch.nn.functional.one_hot(
+                buffer_labels.to(self.device), num_classes=class_count
+            ).float()
+        else:
+            buffer_labels = torch.empty(0, class_count, device=self.device)
+
+        all_embeddings = (
+            torch.cat([current_embeddings, buffer_embeddings], dim=0)
+            if buffer_embeddings.numel() > 0
+            else current_embeddings
+        )
+        all_labels = (
+            torch.cat([current_labels, buffer_labels], dim=0)
+            if buffer_labels.numel() > 0
+            else current_labels
+        )
+
+        # Shuffle jointly
+        perm = torch.randperm(all_embeddings.size(0), device=self.device)
+        all_embeddings = all_embeddings[perm]
+        all_labels = all_labels[perm]
+
+        joint_loader = DataLoader(
+            TensorDataset(all_embeddings, all_labels),
+            batch_size=self.config["dataset"]["batch_size"],
+            shuffle=False,
+        )
+
+        for embeddings, labels in tqdm(joint_loader, desc=f"🔄 Task {task + 1} Joint", leave=False):
+            self._train_step(
+                inputs=embeddings,
+                labels=labels,
+                task=task,
+                classes=None,
+                calculate_metrics=False,
+                is_embedding=True,
+            )
+
+    def _collect_current_task_embeddings(
+        self, task: int, class_count: int
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        embeddings_list = []
+        labels_list = []
+
+        for inputs, labels in tqdm(
+            self.train_loader, desc=f"🧩 Task {task + 1} Embeddings", leave=False
+        ):
+            inputs, labels = inputs.to(self.device), labels.to(self.device)
+            with torch.no_grad():
+                emb = self.model.backbone(inputs)
+
+            # Add to buffer using class indices
+            self.expansion_buffer.add_task_samples(emb, labels.detach())
+
+            embeddings_list.append(emb)
+            labels_oh = torch.nn.functional.one_hot(
+                labels, num_classes=class_count
+            ).float()
+            labels_list.append(labels_oh)
+
+        if not embeddings_list:
+            return (
+                torch.empty(0, device=self.device),
+                torch.empty(0, class_count, device=self.device),
+            )
+
+        return (
+            torch.cat(embeddings_list, dim=0),
+            torch.cat(labels_list, dim=0),
+        )
+
+    def _get_oversampled_buffer(
+        self, task: int, class_count: int
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if task == 0:
+            return torch.empty(0, device=self.device), torch.empty(
+                0, device=self.device, dtype=torch.long
+            )
+
+        X_memory, Y_memory = self.expansion_buffer.get_memory_samples(
+            classes=range(task * self.classes_per_task)
+        )
+
+        if X_memory.size(0) == 0:
+            return (
+                torch.empty(0, device=self.device),
+                torch.empty(0, device=self.device, dtype=torch.long),
+            )
+
+        class_counts = count_samples_per_class(self.train_loader)
+        X_replicated, Y_replicated = replicate_samples(
+            X_memory, Y_memory, max(class_counts.values())
+        )
+
+        return X_replicated.to(self.device), Y_replicated.to(self.device)
+
     def _train_replay(self, task: int, replay_loader: DataLoader):
         """Train on replayed data from the buffer"""
 
-        for embeddings, labels in tqdm(replay_loader, desc=f"Task {task + 1} Replay"):
+        for embeddings, labels in tqdm(replay_loader, desc=f"Task {task + 1} Replay", leave=False):
             embeddings, labels = embeddings.to(self.device), labels.to(self.device)
             labels = torch.nn.functional.one_hot(
                 labels, num_classes=(task + 1) * self.classes_per_task
@@ -453,11 +589,11 @@ class CILTrainer:
                 embeddings = self.model.backbone(inputs)
 
             self.expansion_buffer.add_task_samples(
-                embeddings, processed_labels.detach(), task=task
+                embeddings, torch.argmax(labels, dim=1).detach()
             )
 
         # Update ROLANN layer
-        self.model.update_rolann(
+        self.model.update_classifier(
             inputs.detach(),
             processed_labels,
             classes=classes,
@@ -483,4 +619,4 @@ class CILTrainer:
 
     def _process_labels(self, labels: torch.Tensor) -> torch.Tensor:
         """Apply label smoothing to ground truth labels"""
-        return labels * 0.9 + 0.05
+        return labels * 0.95 + 0.025

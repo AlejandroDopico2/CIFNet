@@ -7,6 +7,7 @@ from sklearn.cluster import KMeans
 from sklearn.neighbors import NearestNeighbors
 import torch
 import torch.nn.functional as F
+from loguru import logger
 
 
 def add_gaussian_noise(embeddings, mean=0.0, std=0.01):
@@ -120,59 +121,40 @@ class BoundarySampling(BaseSampler):
 
         return new_buffer
 
-
 class CentroidSampling(BaseSampler):
-    def sample(self, buffer, n_samples, **kwargs):
-        new_buffer = defaultdict(list)
+    def sample(self, embeddings: torch.Tensor, n_samples: int) -> torch.Tensor:
+        if embeddings.size(0) <= n_samples:
+            return embeddings
 
-        # Calculate centroid for each class
-        for label, samples in buffer.items():
-            if len(samples) <= n_samples:
-                new_buffer[label] = samples
-                continue
-
-            X = samples.cpu().numpy()
-
-            nn = NearestNeighbors(metric="euclidean")
-            nn.fit(X)
-
-            centroid = np.mean(X, axis=0)
-
-            indices = nn.kneighbors(
-                [centroid], n_neighbors=n_samples, return_distance=False
-            )
-
-            new_buffer[label] = samples[indices].squeeze()
-
-        return new_buffer
+        z = torch.nn.functional.normalize(embeddings, dim=1)
+        mu = z.mean(dim=0)
+        dists = torch.norm(z - mu.unsqueeze(0), dim=1)
+        indices = torch.argsort(dists)[:n_samples]
+        return embeddings[indices]
 
 
 class KMeansSampling(BaseSampler):
-    def sample(self, buffer, n_samples, **kwargs):
-        new_buffer = defaultdict(list)
+    def sample(self, embeddings: torch.Tensor, n_samples: int) -> torch.Tensor:
+        if embeddings.size(0) <= n_samples:
+            return embeddings
 
-        for label, samples in buffer.items():
-            if len(samples) <= n_samples:
-                new_buffer[label] = samples
-                continue
+        z = torch.nn.functional.normalize(embeddings, dim=1).cpu().numpy()
+        kmeans = KMeans(n_clusters=n_samples, n_init=10)
+        labels = kmeans.fit_predict(z)
 
-            X = torch.stack(samples).numpy()
+        selected = []
+        for k in range(n_samples):
+            cluster_idx = (labels == k)
+            cluster_embs = embeddings[cluster_idx]
+            center = torch.tensor(kmeans.cluster_centers_[k])
+            dists = torch.norm(
+                torch.nn.functional.normalize(cluster_embs, dim=1)
+                - center.unsqueeze(0),
+                dim=1,
+            )
+            selected.append(cluster_embs[dists.argmin()])
 
-            kmeans = KMeans(n_clusters=n_samples, random_state=0, algorithm="elkan")
-            kmeans.fit(X)
-
-            nn = NearestNeighbors(n_neighbors=1, metric="euclidean")
-            nn.fit(X)
-
-            closest_points = []
-
-            for center in kmeans.cluster_centers_:
-                _, indices = nn.kneighbors([center])
-                closest_points.append(samples[indices[0][0]])
-
-            new_buffer[label] = closest_points
-
-        return new_buffer
+        return torch.stack(selected)
 
 
 class TypicalitySampling(BaseSampler):
@@ -244,3 +226,93 @@ class HybridSampling(BaseSampler):
         assert boundary_buffer.keys() == centroid_buffer.keys() == hybrid_buffer.keys()
 
         return hybrid_buffer
+
+class HerdingSampling(BaseSampler):
+    def __init__(self, normalize: bool = True):
+        self.normalize = normalize
+
+    @torch.no_grad()
+    def sample(self, embeddings: torch.Tensor, n_samples: int) -> torch.Tensor:
+        """
+        embeddings: Tensor [N, D] with a single class
+        n_samples: number of samples to select
+        """
+        N, D = embeddings.size()
+
+        if N <= n_samples:
+            return embeddings
+
+        z = embeddings
+        if self.normalize:
+            z = torch.nn.functional.normalize(z, p=2, dim=1)
+
+        mu = z.mean(dim=0)
+
+        selected_indices = []
+        selected_sum = torch.zeros_like(mu)
+
+        for k in range(1, n_samples + 1):
+            candidate_means = (selected_sum.unsqueeze(0) + z) / k
+
+            dists = torch.norm(candidate_means - mu.unsqueeze(0), dim=1)
+
+            if selected_indices:
+                dists[selected_indices] = float("inf")
+
+            idx = torch.argmin(dists).item()
+            selected_indices.append(idx)
+            selected_sum += z[idx]
+
+        return embeddings[selected_indices]
+
+class PrototypeSampling(BaseSampler):
+    def __init__(self, normalize: bool = True):
+        self.normalize = normalize
+
+    @torch.no_grad()
+    def sample(self, embeddings: torch.Tensor, n_samples: int = None) -> torch.Tensor:
+        """
+        embeddings: Tensor [N, D] (single class)
+        returns: Tensor [K, D] prototypes
+        """
+        N, D = embeddings.size()
+
+        if N <= n_samples:
+            return embeddings
+
+        z = embeddings
+        if self.normalize:
+            z = torch.nn.functional.normalize(z, dim=1)
+
+        z_np = z.cpu().numpy()
+
+        kmeans = KMeans(
+            n_clusters=n_samples,
+            n_init=10,
+            random_state=0,
+        )
+        kmeans.fit(z_np)
+        centers = torch.from_numpy(kmeans.cluster_centers_).to(embeddings.device)
+
+        return centers
+
+class GaussianPrototypeSampling(BaseSampler):
+    def __init__(self, normalize: bool = True):
+        self.normalize = normalize
+
+    def sample(self, embeddings: torch.Tensor, n_samples: int = None):
+        if embeddings.size(0) <= n_samples:
+            return embeddings
+
+        z = embeddings
+        if self.normalize:
+            z = torch.nn.functional.normalize(z, dim=1)
+
+        mu = embeddings.mean(dim=0)
+        sigma = embeddings.std(dim=0)
+
+        prototypes = mu.unsqueeze(0) + torch.randn(
+            n_samples, embeddings.size(1), device=embeddings.device
+        ) * sigma.unsqueeze(0)
+
+        return prototypes

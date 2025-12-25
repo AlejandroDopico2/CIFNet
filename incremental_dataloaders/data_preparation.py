@@ -2,13 +2,13 @@ import torch
 import numpy as np
 from typing import List, Optional, Tuple
 from torch.utils.data import Dataset
-
+from loguru import logger
 from incremental_dataloaders.custom_datasets import TensorSubset
 from incremental_dataloaders.datasets import (
     BaseDataset,
     CIFAR100Dataset,
     CIFAR10Dataset,
-    ImageNet100Dataset,
+    ImageFolderDataset,
     MNISTDataset,
     TinyImageNetDataset,
 )
@@ -18,7 +18,7 @@ DATASET_CLASSES = {
     "CIFAR10": CIFAR10Dataset,
     "CIFAR100": CIFAR100Dataset,
     "TinyImageNet": TinyImageNetDataset,
-    "ImageNet100": ImageNet100Dataset,
+    "ImageFolder": ImageFolderDataset,
 }
 
 
@@ -57,7 +57,10 @@ def prepare_data(
 
 
 def get_dataset_instance(
-    dataset_name: str, root: str = "./data", img_size: int = 224
+    dataset_name: str,
+    root: str = "./data",
+    img_size: int = 224,
+    backbone: Optional[str] = None,
 ) -> Tuple[BaseDataset, BaseDataset]:
     """
     Instantiate and return train and test dataset instances based on dataset name.
@@ -76,8 +79,14 @@ def get_dataset_instance(
     if not dataset_class:
         raise ValueError(f"Dataset '{dataset_name}' is not supported.")
 
+    # Decide whether to use ViT-specific transforms
+    use_vit = backbone is not None and "vit" in backbone.lower()
     # Instantiate the dataset for train and test
-    train_dataset = dataset_class(root=root, train=True, img_size=img_size)
-    test_dataset = dataset_class(root=root, train=False, img_size=img_size)
+    train_dataset = dataset_class(
+        root=root, train=True, img_size=img_size, use_vit=use_vit
+    )
+    test_dataset = dataset_class(
+        root=root, train=False, img_size=img_size, use_vit=use_vit
+    )
 
     return train_dataset, test_dataset

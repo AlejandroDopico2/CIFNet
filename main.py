@@ -74,7 +74,6 @@ class ExperimentRunner:
             "training",
             "incremental",
             "output_dir",
-            "rolann",
         }
         if not required_keys.issubset(self.config.keys()):
             missing = required_keys - self.config.keys()
@@ -99,14 +98,25 @@ class ExperimentRunner:
         """Initialize Weights & Biases tracking if enabled in the configuration."""
         if self.config["training"]["use_wandb"]:
             import wandb
+            from datetime import datetime
+
+            dataset = self.config["dataset"]["name"]
+            backbone = self.config["model"]["backbone"]
+            num_tasks = self.config["incremental"]["num_tasks"]
+            classifier = self.config["model"].get("classifier", "rolann")
+            timestamp = datetime.now().strftime("%m%d_%H%M")
+
+            default_name = f"{dataset}_T{num_tasks}_{backbone}_{classifier}_{timestamp}"
+            run_name = self.config["training"].get("wandb_run_name", default_name)
 
             wandb.init(
                 project=self.config["training"].get(
-                    "wandb_project", "CIFNet-Experiment"
+                    "wandb_project", "CIFNet"
                 ),
+                entity="alexdopico",
                 config=self.config,
                 dir=str(self.output_dir),
-                name=self.config["training"].get("wandb_run_name", None),
+                name=run_name,
                 reinit=True,
             )
 
@@ -125,7 +135,11 @@ class ExperimentRunner:
 
             # Initialize components
             train_dataset, test_dataset = get_dataset_instance(
-                self.config["dataset"]["name"]
+                self.config["dataset"]["name"],
+                root=self.config["dataset"]["root"]
+                if "root" in self.config["dataset"]
+                else "./data",
+                backbone=self.config["model"]["backbone"],
             )
             self.model = build_incremental_model(self.config)
             self.trainer = CILTrainer(model=self.model, config=self.config)
@@ -133,6 +147,7 @@ class ExperimentRunner:
 
             # Initialize tracking
             self.task_accuracies = {i: [] for i in range(num_tasks)}
+            self.mean_accuracy_history: List[float] = []
 
             self._setup_wandb()
 
@@ -201,10 +216,28 @@ class ExperimentRunner:
         for task in range(num_tasks):
             test_metrics = self.trainer.train_task(task, train_dataset, test_dataset)
 
-            # Update metrics
             for eval_task in range(task + 1):
                 accuracy = test_metrics["accuracy"][eval_task]
                 self.task_accuracies[eval_task].append(accuracy)
+
+            # A: mean accuracy across all current tasks after this epoch
+            current_mean_accuracy = float(
+                np.mean([self.task_accuracies[eval_task][-1] for eval_task in range(task + 1)])
+            )
+            self.mean_accuracy_history.append(current_mean_accuracy)
+            # \bar{A}: running mean of A over all epochs so far
+            cumulative_mean_accuracy = float(np.mean(self.mean_accuracy_history))
+
+            if self.config["training"].get("use_wandb", False):
+                import wandb
+
+                wandb.log(
+                    {
+                        "accuracy": current_mean_accuracy,
+                        "mean_accuracy": cumulative_mean_accuracy,
+                    },
+                    step=task,
+                )
 
     def _save_results(self, cl_metrics: Dict, task_accuracies: Dict[int, List[float]]):
         """Save results with additional metrics"""

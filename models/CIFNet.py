@@ -1,8 +1,14 @@
 from models.ROLANN import ROLANN
+from models.classifiers import (
+    RolannClassifier,
+    TorchLinearClassifier,
+    SklearnLogRegClassifier,
+    NCMClassifier,
+)
 from models.backbone import Backbone
 import torch.nn as nn
 import torch
-from typing import Optional
+from typing import Optional, Dict
 
 
 class CIFNet(nn.Module):
@@ -17,10 +23,14 @@ class CIFNet(nn.Module):
         sparse: bool = False,
         device: str = "cuda",
         freeze_mode: str = "all",
+        classifier_type: str = "rolann",
+        classifier_kwargs: Optional[Dict] = None,
     ) -> None:
         super(CIFNet, self).__init__()
 
         self.device = device
+        self.classifier_type = classifier_type.lower()
+        self.classifier_kwargs = classifier_kwargs or {}
 
         if backbone is not None:
             self.backbone = backbone(pretrained).to(self.device)
@@ -29,12 +39,15 @@ class CIFNet(nn.Module):
         else:
             self.backbone = None
 
-        self.rolann = ROLANN(
-            num_classes,
+        self.classifier = self._init_classifier(
+            classifier_type=self.classifier_type,
+            num_classes=num_classes,
             activation=activation,
             lamb=lamb,
             sparse=sparse,
-        ).to(self.device)
+        )
+        # Backwards-compatibility alias
+        self.rolann = self.classifier
 
     def freeze_backbone(self, freeze_mode: str) -> None:
         if freeze_mode == "none":
@@ -66,12 +79,11 @@ class CIFNet(nn.Module):
             x = self.backbone(x).squeeze()
 
         x = x.to(self.device)
-        x = self.rolann(x)
+        x = self.classifier(x)
 
         return x
 
-    @torch.no_grad
-    def update_rolann(
+    def update_classifier(
         self,
         x: torch.Tensor,
         labels: torch.Tensor,
@@ -84,4 +96,54 @@ class CIFNet(nn.Module):
 
         x = x.to(self.device)
 
-        self.rolann.aggregate_update(x, labels.to(self.device), classes=classes)
+        self.classifier.aggregate_update(x, labels.to(self.device), classes=classes)
+
+    # Backwards compatibility for existing training code
+    def update_rolann(
+        self,
+        x: torch.Tensor,
+        labels: torch.Tensor,
+        classes: Optional[int] = None,
+        is_embedding: bool = False,
+    ) -> None:
+        self.update_classifier(x, labels, classes=classes, is_embedding=is_embedding)
+
+    def add_num_classes(self, num_classes: int) -> None:
+        self.classifier.add_num_classes(num_classes)
+        # Keep alias in sync
+        self.rolann = self.classifier
+
+    def _init_classifier(
+        self,
+        classifier_type: str,
+        num_classes: int,
+        activation: str,
+        lamb: float,
+        sparse: bool,
+    ):
+        ctype = classifier_type.lower()
+        if ctype == "rolann":
+            return RolannClassifier(
+                num_classes,
+                activation=activation,
+                lamb=lamb,
+                sparse=sparse,
+            ).to(self.device)
+        if ctype == "linear":
+            return TorchLinearClassifier(
+                num_classes,
+                lr=self.classifier_kwargs.get("lr", 0.01),
+                weight_decay=self.classifier_kwargs.get("weight_decay", 0.0),
+                device=self.device,
+            )
+        if ctype in {"logreg", "logistic", "logistic_regression"}:
+            return SklearnLogRegClassifier(
+                num_classes,
+                alpha=self.classifier_kwargs.get("alpha", 0.0001),
+                lr=self.classifier_kwargs.get("lr", 0.01),
+                device=self.device,
+            )
+        if ctype in {"ncm", "prototype", "proto"}:
+            return NCMClassifier(num_classes, device=self.device)
+
+        raise ValueError(f"Unsupported classifier type: {classifier_type}")

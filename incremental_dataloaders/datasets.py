@@ -2,12 +2,15 @@ import os
 from typing import Tuple, Union
 from torch.utils.data import Dataset
 from torchvision import transforms, datasets
+from torchvision.models import ViT_B_16_Weights
+from torchvision.transforms.functional import InterpolationMode
 
 
 class BaseDataset(Dataset):
-    def __init__(self, root: str, train: bool, img_size: int):
+    def __init__(self, root: str, train: bool, img_size: int, use_vit: bool = False):
         self.root = root
         self.train = train
+        self.use_vit = use_vit
         self.dataset = None
         self.transform = self.get_transform(img_size=img_size)
 
@@ -27,13 +30,14 @@ class BaseDataset(Dataset):
 
 
 class MNISTDataset(BaseDataset):
-    def __init__(self, root="./data", train=True, img_size: int = 224):
-        super().__init__(root, train, img_size=img_size)
+    def __init__(self, root="./data", train=True, img_size: int = 224, use_vit: bool = False):
+        super().__init__(root, train, img_size=img_size, use_vit=use_vit)
         self.dataset = datasets.MNIST(
             root=self.root, train=self.train, download=True, transform=self.transform
         )
 
     def get_transform(self, img_size: Union[Tuple, int]):
+        # ViT is defined for 3-channel inputs; keep MNIST with simple normalization
         return transforms.Compose(
             [
                 transforms.Resize((img_size, img_size)),
@@ -44,13 +48,39 @@ class MNISTDataset(BaseDataset):
 
 
 class CIFAR10Dataset(BaseDataset):
-    def __init__(self, root="./data", train=True, img_size: int = 224):
-        super().__init__(root, train, img_size=img_size)
+    def __init__(self, root="./data", train=True, img_size: int = 224, use_vit: bool = False):
+        super().__init__(root, train, img_size=img_size, use_vit=use_vit)
         self.dataset = datasets.CIFAR10(
             root=self.root, train=self.train, download=True, transform=self.transform
         )
 
     def get_transform(self, img_size: Union[Tuple, int]):
+        if getattr(self, "use_vit", False):
+            vit_weights = ViT_B_16_Weights.IMAGENET1K_V1
+            vit_tfms = vit_weights.transforms()
+            mean, std = vit_tfms.mean, vit_tfms.std
+
+            if self.train:
+                return transforms.Compose(
+                    [
+                        transforms.Resize(232, interpolation=InterpolationMode.BICUBIC),
+                        transforms.RandomCrop(224),
+                        transforms.RandomHorizontalFlip(),
+                        transforms.ToTensor(),
+                        transforms.Normalize(mean=mean, std=std),
+                    ]
+                )
+            else:
+                return transforms.Compose(
+                    [
+                        transforms.Resize(232, interpolation=InterpolationMode.BICUBIC),
+                        transforms.CenterCrop(224),
+                        transforms.ToTensor(),
+                        transforms.Normalize(mean=mean, std=std),
+                    ]
+                )
+
+        # Default CNN-style transforms
         return transforms.Compose(
             [
                 transforms.Resize((img_size, img_size)),
@@ -63,13 +93,38 @@ class CIFAR10Dataset(BaseDataset):
 
 
 class CIFAR100Dataset(BaseDataset):
-    def __init__(self, root="./data", train=True, img_size: int = 224):
-        super().__init__(root, train, img_size=img_size)
+    def __init__(self, root="./data", train=True, img_size: int = 224, use_vit: bool = False):
+        super().__init__(root, train, img_size=img_size, use_vit=use_vit)
         self.dataset = datasets.CIFAR100(
             root=self.root, train=self.train, download=True, transform=self.transform
         )
 
     def get_transform(self, img_size: Union[Tuple, int]):
+        if getattr(self, "use_vit", False):
+            vit_weights = ViT_B_16_Weights.IMAGENET1K_V1
+            vit_tfms = vit_weights.transforms()
+            mean, std = vit_tfms.mean, vit_tfms.std
+
+            if self.train:
+                return transforms.Compose(
+                    [
+                        transforms.Resize(232, interpolation=InterpolationMode.BICUBIC),
+                        transforms.RandomCrop(224),
+                        transforms.ToTensor(),
+                        transforms.Normalize(mean=mean, std=std),
+                    ]
+                )
+            else:
+                return transforms.Compose(
+                    [
+                        transforms.Resize(232, interpolation=InterpolationMode.BICUBIC),
+                        transforms.CenterCrop(224),
+                        transforms.ToTensor(),
+                        transforms.Normalize(mean=mean, std=std),
+                    ]
+                )
+
+        # Default CNN-style transforms
         return transforms.Compose(
             [
                 transforms.Resize((img_size, img_size)),
@@ -82,12 +137,38 @@ class CIFAR100Dataset(BaseDataset):
 
 
 class TinyImageNetDataset(BaseDataset):
-    def __init__(self, root="./data", train=True, img_size: int = 224):
+    def __init__(self, root="./data", train=True, img_size: int = 224, use_vit: bool = False):
         root = os.path.join(root, "tiny-imagenet", "train" if train else "val")
-        super().__init__(root, train, img_size=img_size)
+        super().__init__(root, train, img_size=img_size, use_vit=use_vit)
         self.dataset = datasets.ImageFolder(root=self.root, transform=self.transform)
 
     def get_transform(self, img_size: Union[Tuple, int]):
+        if getattr(self, "use_vit", False):
+            vit_weights = ViT_B_16_Weights.IMAGENET1K_V1
+            vit_tfms = vit_weights.transforms()
+            mean, std = vit_tfms.mean, vit_tfms.std
+
+            if self.train:
+                return transforms.Compose(
+                    [
+                        transforms.Resize(232, interpolation=InterpolationMode.BICUBIC),
+                        transforms.RandomCrop(224),
+                        transforms.RandomHorizontalFlip(),
+                        transforms.ToTensor(),
+                        transforms.Normalize(mean=mean, std=std),
+                    ]
+                )
+            else:
+                return transforms.Compose(
+                    [
+                        transforms.Resize(232, interpolation=InterpolationMode.BICUBIC),
+                        transforms.CenterCrop(224),
+                        transforms.ToTensor(),
+                        transforms.Normalize(mean=mean, std=std),
+                    ]
+                )
+
+        # Default CNN-style transforms
         return transforms.Compose(
             [
                 transforms.Resize((img_size, img_size)),
@@ -99,13 +180,38 @@ class TinyImageNetDataset(BaseDataset):
         )
 
 
-class ImageNet100Dataset(BaseDataset):
-    def __init__(self, root="./data", train=True, img_size: int = 224):
-        root = os.path.join(root, "imagenet-100", "train" if train else "val")
-        super().__init__(root, train, img_size=img_size)
+class ImageFolderDataset(BaseDataset):
+    def __init__(self, root="./data", train=True, img_size: int = 224, use_vit: bool = False):
+        root = os.path.join(root, "train" if train else "val")
+        super().__init__(root, train, img_size=img_size, use_vit=use_vit)
         self.dataset = datasets.ImageFolder(root=self.root, transform=self.transform)
 
     def get_transform(self, img_size: Union[Tuple, int]):
+        if getattr(self, "use_vit", False):
+            vit_weights = ViT_B_16_Weights.IMAGENET1K_V1
+            vit_tfms = vit_weights.transforms()
+            mean, std = vit_tfms.mean, vit_tfms.std
+
+            if self.train:
+                return transforms.Compose(
+                    [
+                        transforms.Resize(232, interpolation=InterpolationMode.BICUBIC),
+                        transforms.RandomCrop(224),
+                        transforms.ToTensor(),
+                        transforms.Normalize(mean=mean, std=std),
+                    ]
+                )
+            else:
+                return transforms.Compose(
+                    [
+                        transforms.Resize(232, interpolation=InterpolationMode.BICUBIC),
+                        transforms.CenterCrop(224),
+                        transforms.ToTensor(),
+                        transforms.Normalize(mean=mean, std=std),
+                    ]
+                )
+
+        # Default CNN-style transforms
         return transforms.Compose(
             [
                 transforms.Resize((img_size, img_size)),

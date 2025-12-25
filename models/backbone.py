@@ -5,6 +5,7 @@ import torch.nn as nn
 from torch import Tensor
 from torchvision import models
 import torch
+import timm
 
 class Backbone(ABC, nn.Module):
     def __init__(self):
@@ -23,9 +24,13 @@ class ViTB16Backbone(Backbone):
     def __init__(self, pretrained: bool = True):
         super(ViTB16Backbone, self).__init__()
         self.backbone_type = "vit"
-        self.model = models.vit_b_16(weights=models.ViT_B_16_Weights.IMAGENET1K_V1)
+        # self.model = models.vit_b_16(weights=models.ViT_B_16_Weights.IMAGENET1K_V1)
+        self.model = timm.create_model(
+            "vit_base_patch16_224_in21k",
+            pretrained=True
+        )
+        self.model.head = nn.Identity()
         self.model.eval()
-        self.model.heads.head = nn.Identity()
         
     def set_input_channels(self, channels: int):
         pass
@@ -45,7 +50,6 @@ class ResNet18Backbone(Backbone):
             self.model.conv1 = nn.Conv2d(
                 1, 64, kernel_size=7, stride=2, padding=3, bias=False
             )
-
 
 class ResNet34Backbone(Backbone):
     def __init__(self, pretrained: bool = True):
