@@ -289,12 +289,8 @@ class ExperimentRunner:
 
 
 if __name__ == "__main__":
-    # try:
     runner = ExperimentRunner()
     metrics = runner.run()
     logger.info("\nExperiment completed successfully!")
     logger.info(f"Final metrics: {json.dumps(metrics, indent=4)}")
 
-    # except Exception as e:
-    # logger.critical(f"Critical error: {str(e)}")
-    # exit(1)

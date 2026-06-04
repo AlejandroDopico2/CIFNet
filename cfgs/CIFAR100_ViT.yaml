@@ -15,6 +15,7 @@ incremental:
   buffer_size: 2000
   use_eb: true
   sampling_strategy: random
+  replay_backend: buffer
 training:
   use_wandb: False
 output_dir: "./results/CIFAR100_ViT/normalize2"

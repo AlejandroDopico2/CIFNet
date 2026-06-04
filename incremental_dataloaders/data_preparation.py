@@ -61,6 +61,8 @@ def get_dataset_instance(
     root: str = "./data",
     img_size: int = 224,
     backbone: Optional[str] = None,
+    use_vit: Optional[bool] = None,
+    use_clip: Optional[bool] = None,
 ) -> Tuple[BaseDataset, BaseDataset]:
     """
     Instantiate and return train and test dataset instances based on dataset name.
@@ -79,14 +81,17 @@ def get_dataset_instance(
     if not dataset_class:
         raise ValueError(f"Dataset '{dataset_name}' is not supported.")
 
-    # Decide whether to use ViT-specific transforms
-    use_vit = backbone is not None and "vit" in backbone.lower()
-    # Instantiate the dataset for train and test
+    backbone_name = (backbone or "").lower()
+    if use_clip is None:
+        use_clip = "clip" in backbone_name
+    if use_vit is None:
+        use_vit = "vit" in backbone_name and not use_clip
+
     train_dataset = dataset_class(
-        root=root, train=True, img_size=img_size, use_vit=use_vit
+        root=root, train=True, img_size=img_size, use_vit=use_vit, use_clip=use_clip
     )
     test_dataset = dataset_class(
-        root=root, train=False, img_size=img_size, use_vit=use_vit
+        root=root, train=False, img_size=img_size, use_vit=use_vit, use_clip=use_clip
     )
 
     return train_dataset, test_dataset

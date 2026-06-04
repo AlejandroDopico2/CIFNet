@@ -1,0 +1,36 @@
+dataset:
+  name: CIFAR100
+  batch_size: 256
+model:
+  backbone: ResNet18
+  pretrained: true
+  normalize: false
+  activation: logs
+incremental:
+  num_tasks: 20
+  classes_per_task: 5
+  initial_tasks: 1
+  samples_per_task: null
+  buffer_size: 200
+  use_eb: true
+  replay_backend: cvae_full
+  replay_generate_from_cvae: true
+  anchor_per_class: 5
+  generated_per_class: 5
+  cvae_embed_dim: 512
+  cvae_latent_dim: 64
+  cvae_class_embed_dim: 64
+  sampling_strategy: random
+  replay_debug: true
+  cvae_train_max_steps: 5000      # upper cap only
+  cvae_train_min_steps: 80
+  cvae_train_eval_every: 25
+  cvae_train_patience: 3
+  cvae_recon_cosine_stop: 0.95    # raw ResNet: metric is 1-relative-MSE (same key name)
+  cvae_gen_cosine_stop: 0.82  # set 0 to disable gen-based stop
+  cvae_gen_eval_samples_per_class: 48
+  cvae_train_on: task_pool
+training:
+  use_wandb: false
+output_dir: "./results/CIFAR100_ResNet18SSL/pretrained"
+device: "cuda"

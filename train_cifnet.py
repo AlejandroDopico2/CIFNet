@@ -12,7 +12,7 @@ import numpy as np
 
 from incremental_dataloaders.data_preparation import prepare_data
 from models.CIFNet import CIFNet
-from models.samplers.MemoryExpansionBuffer import MemoryExpansionBuffer
+from models.replay.replay_store import create_replay_store
 from models.samplers.SamplingStrategy import (
     BoundarySampling,
     CentroidSampling,
@@ -245,13 +245,19 @@ class CILTrainer:
         sampler_name = self.config["incremental"]["sampling_strategy"]
         sampler_kwargs = self.config["incremental"].get("sampling_strategy_kwargs", {})
 
-        self.expansion_buffer = MemoryExpansionBuffer(
-            total_memory_size=self.config["incremental"]["buffer_size"],
+        self.replay_store = create_replay_store(
+            self.config,
             sampling_strategy=get_sampling_strategy(
                 sampler_name,
                 **sampler_kwargs,
             ),
+            device=self.device,
         )
+        # Backwards-compatible alias
+        self.expansion_buffer = self.replay_store
+
+        if hasattr(self.model.classifier, "set_replay_buffer"):
+            self.model.classifier.set_replay_buffer(self.replay_store)
 
     def train_task(
         self, task_id: int, train_dataset: Subset, test_dataset: Subset
@@ -263,12 +269,23 @@ class CILTrainer:
 
         # Training phases
         if self.model.classifier_type == "rolann":
-            self._train_current_task(task_id)
-            self._train_with_buffer(task_id)
+            # Single backbone pass → embedding dataset → ROLANN training.
+            curr_emb, curr_lbl = self._extract_all_embeddings(task_id)
+            replay_emb, replay_lbl = self._get_old_class_replay_memory(
+                task_id,
+                samples_per_class=self._per_class_max(curr_lbl),
+            )
+            self._train_rolann_from_embeddings(
+                task_id, curr_emb, curr_lbl, replay_emb, replay_lbl
+            )
         else:
             self._train_joint_task_and_buffer(task_id)
 
-        self.expansion_buffer._maintain_buffer()
+        self.replay_store.maintain()
+
+        # Optional: measure CVAE generation quality against the reference buffer.
+        # Enabled via config key ``cvae_measure_quality: true``.
+        self._maybe_measure_cvae_quality(task_id)
 
         # Evaluation
         test_metrics = self._evaluate_tasks(task_id, test_dataset, mode="Test")
@@ -283,12 +300,154 @@ class CILTrainer:
         # Model adjustments
         self.model.add_num_classes(self.classes_per_task)
 
+        if hasattr(self.model.classifier, "set_replay_buffer"):
+            self.model.classifier.set_replay_buffer(self.replay_store)
+
         # Data preparation
         self.train_loader = self._prepare_task_data(train_dataset, current_classes)
 
     def _get_task_classes(self, task: int) -> range:
         """Get class range for current task"""
         return range(task * self.classes_per_task, (task + 1) * self.classes_per_task)
+
+    def _current_task_samples_per_class(self) -> int:
+        """Samples per class in the current task stream (replay target count)."""
+        counts = count_samples_per_class(self.train_loader)
+        if not counts:
+            return 0
+        return max(counts.values())
+
+    def _per_class_max(self, labels: torch.Tensor) -> int:
+        """Max samples per class in a flat index-label tensor."""
+        if labels.numel() == 0:
+            return 0
+        counts: Dict[int, int] = defaultdict(int)
+        for c in labels.view(-1).tolist():
+            counts[int(c)] += 1
+        return max(counts.values()) if counts else 0
+
+    def _get_old_class_replay_memory(
+        self,
+        task: int,
+        samples_per_class: Optional[int] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Old-class embeddings balanced to current-task per-class count.
+
+        *samples_per_class* overrides the DataLoader-based count when the
+        caller already has the current-task label tensor available (avoids
+        a second pass through the DataLoader).
+        """
+        if task == 0:
+            return (
+                torch.empty(0, device=self.device),
+                torch.empty(0, device=self.device, dtype=torch.long),
+            )
+
+        old_classes = list(range(task * self.classes_per_task))
+        per_class = (
+            samples_per_class
+            if samples_per_class is not None
+            else self._current_task_samples_per_class()
+        )
+        kwargs: Dict[str, Any] = {}
+        if per_class > 0:
+            kwargs["samples_per_class"] = per_class
+
+        return self.replay_store.get_memory_samples(old_classes, **kwargs)
+
+    def _maybe_measure_cvae_quality(self, task_id: int) -> None:
+        """
+        Measure CVAE generation quality against the measurement-only reference
+        buffer and log the results.
+
+        Controlled by two config keys:
+        - ``cvae_measure_quality: true``   — enables the measurement (default false)
+        - ``ref_buffer_per_class: N``      — must be > 0 for the reference buffer
+          to exist; set this in the store config (default 0 = disabled)
+        - ``cvae_quality_n_gen: N``        — samples per class to generate for
+          comparison (default 64)
+        """
+        inc_cfg = self.config.get("incremental", {})
+        if not inc_cfg.get("cvae_measure_quality", False):
+            return
+
+        store = self.replay_store
+        if not hasattr(store, "measure_generation_quality"):
+            return
+        if not getattr(store, "_ref_buffer", {}):
+            logger.warning(
+                "cvae_measure_quality=true but ref_buffer_per_class=0 — "
+                "no reference data collected. Set ref_buffer_per_class > 0."
+            )
+            return
+
+        n_gen = int(inc_cfg.get("cvae_quality_n_gen", 64))
+        current_task_classes = list(self._get_task_classes(task_id))
+
+        report = store.measure_generation_quality(n_gen_per_class=n_gen)
+        if not report or not report.get("agg"):
+            return
+
+        from models.replay.cvae_metrics import format_generation_quality_table
+        table = format_generation_quality_table(
+            report,
+            task_id=task_id,
+            current_task_classes=current_task_classes,
+        )
+        logger.info(table)
+
+        # Persist the report in the store for downstream access (e.g. wandb).
+        store.last_generation_quality_report = report
+
+        agg = report["agg"]
+        if wandb.run is not None:
+            wandb.log(
+                {
+                    "cvae/gen_mean_centroid_l2": agg["mean_centroid_l2"],
+                    "cvae/gen_mean_std_ratio": agg["mean_std_ratio"],
+                    "cvae/gen_mean_cosine_sim": agg["mean_cosine_sim"],
+                    "cvae/gen_mean_fd": agg["mean_fd"],
+                    "cvae/gen_mean_mmd": agg["mean_mmd"],
+                    "cvae/gen_worst_fd": agg["worst_class_fd"],
+                    "cvae/gen_worst_mmd": agg["worst_class_mmd"],
+                    "task": task_id + 1,
+                },
+                step=task_id,
+            )
+
+    def _log_replay_debug(self, task: int, phase: str, **kwargs) -> None:
+        """Lightweight replay / calibration logging (enable via config)."""
+        if not self.config.get("incremental", {}).get("replay_debug", True):
+            return
+        parts = [f"[replay task {task + 1} | {phase}]"]
+        for key, val in kwargs.items():
+            if isinstance(val, torch.Tensor):
+                parts.append(f"{key}=shape{tuple(val.shape)}")
+            elif isinstance(val, dict):
+                parts.append(f"{key}={val}")
+            else:
+                parts.append(f"{key}={val}")
+        logger.info(" ".join(parts))
+
+    def _calibration_labels_for_new_neurons(
+        self, batch_size: int, task: int
+    ) -> torch.Tensor:
+        """
+        Targets for replay: keep new neurons inactive on old-class embeddings.
+        Only columns for current-task classes are updated (see classes= in replay).
+        """
+        num_classes = (task + 1) * self.classes_per_task
+        labels = torch.zeros(batch_size, num_classes, device=self.device)
+        return self._process_labels(labels)
+
+    def _summarize_per_class_counts(
+        self, labels: torch.Tensor
+    ) -> Dict[int, int]:
+        labels = labels.view(-1).long().cpu()
+        counts: Dict[int, int] = {}
+        for c in labels.unique().tolist():
+            counts[int(c)] = int((labels == c).sum().item())
+        return counts
 
     def _prepare_task_data(self, dataset: Subset, classes: range) -> DataLoader:
         """Prepare data loaders for current task"""
@@ -304,186 +463,175 @@ class CILTrainer:
             shuffle=True,
         )
 
-    def _train_current_task(self, task: int) -> Dict[str, float]:
-        """Train for a single epoch"""
+    @torch.no_grad()
+    def _extract_all_embeddings(
+        self, task: int
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Single backbone pass over the current task's training loader.
+
+        Returns CPU tensors ``(embeddings, label_indices)`` covering the entire
+        training set.  As a side-effect, every batch is staged in the replay
+        store (``add_task_samples``) so the CVAE / buffer receives all real
+        embeddings for this task — no second pass is needed.
+        """
         self.model.eval()
+        emb_list: List[torch.Tensor] = []
+        lbl_list: List[torch.Tensor] = []
 
         for inputs, labels in tqdm(
             self.train_loader,
-            desc=f"🎯 Task {task + 1}",
+            desc=f"Extracting task {task + 1}",
             leave=False,
         ):
-            inputs, labels = inputs.to(self.device), labels.to(self.device)
-            labels = torch.nn.functional.one_hot(
-                labels, num_classes=(task + 1) * self.classes_per_task
+            inputs = inputs.to(self.device)
+            labels = labels.to(self.device)
+            emb = self.model.backbone(inputs)
+            # Stage for CVAE / replay buffer (done exactly once per sample).
+            self.replay_store.add_task_samples(emb.detach(), labels.detach())
+            emb_list.append(emb.cpu())
+            lbl_list.append(labels.cpu())
+
+        if not emb_list:
+            return torch.empty(0), torch.empty(0, dtype=torch.long)
+        return torch.cat(emb_list, dim=0), torch.cat(lbl_list, dim=0)
+
+    def _train_rolann_from_embeddings(
+        self,
+        task: int,
+        curr_emb: torch.Tensor,
+        curr_lbl: torch.Tensor,
+        replay_emb: torch.Tensor,
+        replay_lbl: torch.Tensor,
+    ) -> None:
+        """
+        Train the ROLANN classifier on pre-extracted embeddings.
+
+        No backbone call is made here; all inputs are already in embedding
+        space.  Two sequential phases mirror the previous online flow:
+
+        **Phase 1 — replay calibration** (skipped at task 0)
+            Old-class embeddings (from CVAE or buffer) are passed with
+            calibration labels (zeros for new neurons) so that the freshly
+            added output nodes learn to stay inactive on old-class data.
+
+        **Phase 2 — current-task learning**
+            Current-task embeddings are passed with one-hot labels so that
+            the new output nodes learn to activate on the new classes.
+        """
+        batch_size = self.config["dataset"]["batch_size"]
+        new_classes = list(self._get_task_classes(task))
+        num_classes = (task + 1) * self.classes_per_task
+
+        # ── Phase 1: replay calibration ────────────────────────────────────
+        if replay_emb.numel() > 0:
+            source_summary = {}
+            if hasattr(self.replay_store, "last_replay_sources"):
+                source_summary = self.replay_store.last_replay_sources
+            self._log_replay_debug(
+                task,
+                "replay_phase",
+                n_samples=int(replay_emb.size(0)),
+                replay_per_class=self._summarize_per_class_counts(replay_lbl),
+                new_neurons=new_classes,
+                replay_sources=source_summary,
             )
-
-            # Update model with current task data
-            self._train_step(
-                inputs=inputs,
-                labels=labels,
-                task=task,
-                classes=None,
-                calculate_metrics=False,
-                is_embedding=False,
-            )
-
-    def _train_with_buffer(self, task: int):
-        """Train using the expansion buffer"""
-        if task == 0:
-            return  # No buffer for the first task
-
-        X_memory, Y_memory = self.expansion_buffer.get_memory_samples(
-            classes=range(task * self.classes_per_task)
-        )
-
-        if X_memory.size(0) > 0:
-            # Replicate samples to balance class distribution
-            class_counts = count_samples_per_class(self.train_loader)
-            X_replicated, Y_replicated = replicate_samples(
-                X_memory, Y_memory, max(class_counts.values())
-            )
-            past_task_dataset = TensorDataset(X_replicated, Y_replicated)
 
             replay_loader = DataLoader(
-                past_task_dataset,
-                batch_size=self.config["dataset"]["batch_size"],
+                TensorDataset(replay_emb),
+                batch_size=batch_size,
                 shuffle=True,
             )
+            for (emb_b,) in tqdm(
+                replay_loader, desc=f"Replay {task + 1}", leave=False
+            ):
+                emb_b = emb_b.to(self.device)
+                cal_labels = self._calibration_labels_for_new_neurons(
+                    emb_b.size(0), task
+                )
+                self.model.update_classifier(
+                    emb_b, cal_labels, classes=new_classes, is_embedding=True
+                )
+        elif task > 0:
+            self._log_replay_debug(task, "skip", reason="empty replay memory")
 
-            # Train on replayed data
-            self._train_replay(task, replay_loader)
-
-    def _train_joint_task_and_buffer(self, task: int) -> None:
-        """
-        For non-ROLANN classifiers: compute embeddings for the current task,
-        concatenate with oversampled buffer embeddings, shuffle, and train once.
-        """
-        self.model.eval()
-        class_count = (task + 1) * self.classes_per_task
-
-        # Collect current-task embeddings and add them to the buffer
-        current_embeddings, current_labels = self._collect_current_task_embeddings(
-            task, class_count
+        # ── Phase 2: current-task learning ─────────────────────────────────
+        self._log_replay_debug(
+            task,
+            "current_task",
+            update_classes=new_classes,
+            n_samples=int(curr_emb.size(0)),
         )
-
-        # Fetch and oversample buffer embeddings (previous classes)
-        buffer_embeddings, buffer_labels = self._get_oversampled_buffer(task, class_count)
-
-        if current_embeddings.numel() == 0 and buffer_embeddings.numel() == 0:
-            return
-
-        if buffer_embeddings.numel() > 0:
-            buffer_labels = torch.nn.functional.one_hot(
-                buffer_labels.to(self.device), num_classes=class_count
-            ).float()
-        else:
-            buffer_labels = torch.empty(0, class_count, device=self.device)
-
-        all_embeddings = (
-            torch.cat([current_embeddings, buffer_embeddings], dim=0)
-            if buffer_embeddings.numel() > 0
-            else current_embeddings
+        curr_lbl_oh = torch.nn.functional.one_hot(
+            curr_lbl.long(), num_classes=num_classes
+        ).float()
+        curr_loader = DataLoader(
+            TensorDataset(curr_emb, curr_lbl_oh),
+            batch_size=batch_size,
+            shuffle=True,
         )
-        all_labels = (
-            torch.cat([current_labels, buffer_labels], dim=0)
-            if buffer_labels.numel() > 0
-            else current_labels
-        )
-
-        # Shuffle jointly
-        perm = torch.randperm(all_embeddings.size(0), device=self.device)
-        all_embeddings = all_embeddings[perm]
-        all_labels = all_labels[perm]
-
-        joint_loader = DataLoader(
-            TensorDataset(all_embeddings, all_labels),
-            batch_size=self.config["dataset"]["batch_size"],
-            shuffle=False,
-        )
-
-        for embeddings, labels in tqdm(joint_loader, desc=f"🔄 Task {task + 1} Joint", leave=False):
-            self._train_step(
-                inputs=embeddings,
-                labels=labels,
-                task=task,
+        for emb_b, lbl_b in tqdm(
+            curr_loader, desc=f"Task {task + 1}", leave=False
+        ):
+            emb_b = emb_b.to(self.device)
+            lbl_b = lbl_b.to(self.device)
+            self.model.update_classifier(
+                emb_b,
+                self._process_labels(lbl_b),
                 classes=None,
-                calculate_metrics=False,
                 is_embedding=True,
             )
 
-    def _collect_current_task_embeddings(
-        self, task: int, class_count: int
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        embeddings_list = []
-        labels_list = []
+    def _train_joint_task_and_buffer(self, task: int) -> None:
+        """
+        For non-ROLANN classifiers: extract all embeddings once, concatenate
+        with replay embeddings, shuffle, and train in one joint pass.
+        """
+        class_count = (task + 1) * self.classes_per_task
 
-        for inputs, labels in tqdm(
-            self.train_loader, desc=f"🧩 Task {task + 1} Embeddings", leave=False
+        # Single backbone pass — stages embeddings in the replay store too.
+        curr_emb, curr_lbl_idx = self._extract_all_embeddings(task)
+        if curr_emb.numel() == 0:
+            return
+
+        curr_lbl_oh = torch.nn.functional.one_hot(
+            curr_lbl_idx.long(), num_classes=class_count
+        ).float().to(self.device)
+        curr_emb = curr_emb.to(self.device)
+
+        # Old-class replay (buffer or CVAE-generated).
+        replay_emb, replay_lbl = self._get_old_class_replay_memory(
+            task, samples_per_class=self._per_class_max(curr_lbl_idx)
+        )
+
+        if replay_emb.numel() > 0:
+            replay_lbl_oh = torch.nn.functional.one_hot(
+                replay_lbl.long().to(self.device), num_classes=class_count
+            ).float()
+            all_emb = torch.cat([curr_emb, replay_emb.to(self.device)], dim=0)
+            all_lbl = torch.cat([curr_lbl_oh, replay_lbl_oh], dim=0)
+        else:
+            all_emb = curr_emb
+            all_lbl = curr_lbl_oh
+
+        # Shuffle jointly before training.
+        perm = torch.randperm(all_emb.size(0), device=self.device)
+        all_emb = all_emb[perm]
+        all_lbl = all_lbl[perm]
+
+        joint_loader = DataLoader(
+            TensorDataset(all_emb, all_lbl),
+            batch_size=self.config["dataset"]["batch_size"],
+            shuffle=False,
+        )
+        for emb_b, lbl_b in tqdm(
+            joint_loader, desc=f"Joint task {task + 1}", leave=False
         ):
-            inputs, labels = inputs.to(self.device), labels.to(self.device)
-            with torch.no_grad():
-                emb = self.model.backbone(inputs)
-
-            # Add to buffer using class indices
-            self.expansion_buffer.add_task_samples(emb, labels.detach())
-
-            embeddings_list.append(emb)
-            labels_oh = torch.nn.functional.one_hot(
-                labels, num_classes=class_count
-            ).float()
-            labels_list.append(labels_oh)
-
-        if not embeddings_list:
-            return (
-                torch.empty(0, device=self.device),
-                torch.empty(0, class_count, device=self.device),
-            )
-
-        return (
-            torch.cat(embeddings_list, dim=0),
-            torch.cat(labels_list, dim=0),
-        )
-
-    def _get_oversampled_buffer(
-        self, task: int, class_count: int
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        if task == 0:
-            return torch.empty(0, device=self.device), torch.empty(
-                0, device=self.device, dtype=torch.long
-            )
-
-        X_memory, Y_memory = self.expansion_buffer.get_memory_samples(
-            classes=range(task * self.classes_per_task)
-        )
-
-        if X_memory.size(0) == 0:
-            return (
-                torch.empty(0, device=self.device),
-                torch.empty(0, device=self.device, dtype=torch.long),
-            )
-
-        class_counts = count_samples_per_class(self.train_loader)
-        X_replicated, Y_replicated = replicate_samples(
-            X_memory, Y_memory, max(class_counts.values())
-        )
-
-        return X_replicated.to(self.device), Y_replicated.to(self.device)
-
-    def _train_replay(self, task: int, replay_loader: DataLoader):
-        """Train on replayed data from the buffer"""
-
-        for embeddings, labels in tqdm(replay_loader, desc=f"Task {task + 1} Replay", leave=False):
-            embeddings, labels = embeddings.to(self.device), labels.to(self.device)
-            labels = torch.nn.functional.one_hot(
-                labels, num_classes=(task + 1) * self.classes_per_task
-            ).float()
-
             self._train_step(
-                inputs=embeddings,
-                labels=labels,
+                inputs=emb_b,
+                labels=lbl_b,
                 task=task,
-                classes=self._get_task_classes(task),
+                classes=None,
                 calculate_metrics=False,
                 is_embedding=True,
             )
@@ -562,37 +710,19 @@ class CILTrainer:
         inputs: torch.Tensor,
         labels: torch.Tensor,
         task: int,
-        classes: List[int],
+        classes: Optional[List[int]],
         calculate_metrics: bool = False,
-        is_embedding: bool = False,
+        is_embedding: bool = True,
     ) -> Optional[Tuple[float, int, int]]:
         """
-        Core training step handling both model updates and optional metric calculation
+        Single classifier update on a batch of **pre-extracted embeddings**.
 
-        Args:
-            inputs: Batch of input tensors
-            labels: Ground truth labels
-            task: Current task ID
-            classes: List of active classes for this task
-            calculate_metrics: Whether to compute loss/accuracy
-            is_embedding: Whether inputs are precomputed embeddings
-
-        Returns:
-            Tuple of (loss, correct, total) if calculate_metrics=True, else None
+        ``is_embedding`` is ``True`` by default — all callers now pass
+        embeddings directly.  Backbone extraction and replay-store staging are
+        handled upstream in ``_extract_all_embeddings``.
         """
-        # Process labels with smoothing
         processed_labels = self._process_labels(labels)
 
-        # Update memory buffer with current samples
-        if not is_embedding:
-            with torch.no_grad():
-                embeddings = self.model.backbone(inputs)
-
-            self.expansion_buffer.add_task_samples(
-                embeddings, torch.argmax(labels, dim=1).detach()
-            )
-
-        # Update ROLANN layer
         self.model.update_classifier(
             inputs.detach(),
             processed_labels,
@@ -600,21 +730,15 @@ class CILTrainer:
             is_embedding=is_embedding,
         )
 
-        if not calculate_metrics or is_embedding:
+        if not calculate_metrics:
             return None
 
-        # Forward pass
-        outputs = self.model(inputs)
-
-        # Calculate loss
+        outputs = self.model.classifier(inputs.detach())
         loss = self.criterion(outputs, torch.argmax(processed_labels, dim=1))
-
-        # Calculate accuracy
         preds = torch.argmax(outputs, dim=1)
         true_labels = torch.argmax(processed_labels, dim=1)
         correct = (preds == true_labels).sum().item()
         total = true_labels.size(0)
-
         return loss.item(), correct, total
 
     def _process_labels(self, labels: torch.Tensor) -> torch.Tensor:

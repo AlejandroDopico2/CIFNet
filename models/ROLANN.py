@@ -198,6 +198,8 @@ class ROLANN(nn.Module):
         else:
             classes_to_process = classes
 
+        # print(f"CLASSES TO PROCESS: {classes_to_process}")
+
         d_filtered = d[:, classes_to_process]
         
         self.update_weights(X, d_filtered, classes_to_process)

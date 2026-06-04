@@ -1,13 +1,15 @@
 dataset:
   name: ImageFolder
-  root: /home/alejandrodopico/Datasets/CUB_200_2011/CUB_200_2011
-  batch_size: 128
+  root: /home/alejandrodopico/data/ImageNet100
+  batch_size: 256
 model:
-  backbone: ResNet34
+  backbone: ResNet18
   pretrained: true
+  normalize: false
+  activation: logs
 incremental:
   num_tasks: 20
-  classes_per_task: 10
+  classes_per_task: 5
   initial_tasks: 1
   samples_per_task: null
   buffer_size: 2000
@@ -15,5 +17,5 @@ incremental:
   sampling_strategy: random
 training:
   use_wandb: false
-output_dir: "CIFNet/CUB200"
+output_dir: "./results/ImageNet100_ResNet50/pretrained"
 device: "cuda"

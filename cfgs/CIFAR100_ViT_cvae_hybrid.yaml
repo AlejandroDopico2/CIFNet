@@ -1,0 +1,40 @@
+dataset:
+  name: CIFAR100
+  batch_size: 256
+model:
+  backbone: ViTB16
+  pretrained: true
+  activation: lin
+  normalize: true
+  lamb: 0.01
+incremental:
+  num_tasks: 10
+  classes_per_task: 10
+  initial_tasks: 1
+  samples_per_task: null
+  buffer_size: 2000
+  use_eb: true
+  sampling_strategy: random
+  replay_backend: cvae_hybrid
+  anchor_per_class: 5
+  generated_per_class: 15
+  cvae_embed_dim: 768
+  cvae_latent_dim: 32
+  cvae_class_embed_dim: 64
+  cvae_train_max_steps: 3000
+  cvae_train_min_steps: 80
+  cvae_train_eval_every: 25
+  cvae_train_patience: 3
+  cvae_recon_cosine_stop: 0.93
+  cvae_gen_cosine_stop: 0.88
+  cvae_gen_eval_samples_per_class: 48
+  cvae_train_on: real_buffer
+  cvae_beta: 0.05
+  gen_replay_ratio: 0.3
+  cvae_teacher_kl: false
+  replay_debug: true
+  replay_generate_from_cvae: true
+training:
+  use_wandb: False
+output_dir: "./results/CIFAR100_ViT/cvae_hybrid"
+device: "cuda"

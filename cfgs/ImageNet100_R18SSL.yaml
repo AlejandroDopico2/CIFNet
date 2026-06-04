@@ -1,11 +1,12 @@
 dataset:
-  name: CIFAR100
+  name: ImageFolder
+  root: /home/alejandrodopico/data/ImageNet100
   batch_size: 256
 model:
-  backbone: ResNet34
+  backbone: ResNet18SSL
   pretrained: true
   normalize: false
-  activation: lin
+  activation: logs
 incremental:
   num_tasks: 20
   classes_per_task: 5
@@ -15,6 +16,6 @@ incremental:
   use_eb: true
   sampling_strategy: random
 training:
-  use_wandb: false
-output_dir: "./results/CIFAR100_ResNet34/pretrained"
+  use_wandb: True
+output_dir: "./results/ImageNet100_ResNet18SSL/pretrained"
 device: "cuda"

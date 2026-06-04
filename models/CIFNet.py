@@ -23,7 +23,6 @@ class CIFNet(nn.Module):
         in_channels: int = 3,
         sparse: bool = False,
         device: str = "cuda",
-        freeze_mode: str = "all",
         classifier_type: str = "rolann",
         classifier_kwargs: Optional[Dict] = None,
         normalize: bool = True,
@@ -37,7 +36,8 @@ class CIFNet(nn.Module):
         if backbone is not None:
             self.backbone = backbone(pretrained).to(self.device)
             self.backbone.set_input_channels(in_channels)
-            self.freeze_backbone(freeze_mode)
+            for param in self.backbone.parameters():
+                param.requires_grad = False
         else:
             self.backbone = None
 
@@ -51,56 +51,6 @@ class CIFNet(nn.Module):
         # Backwards-compatibility alias
         self.rolann = self.classifier
 
-        self.register_buffer("running_mean", torch.zeros(1, 512)) # feature_dim=768 for ViT
-        self.navg = 0
-
-
-    def freeze_backbone(self, freeze_mode: str) -> None:
-        if freeze_mode == "none":
-            # No freezing
-            for param in self.backbone.parameters():
-                param.requires_grad = True
-        elif freeze_mode == "all":
-            # Freeze all layers
-            for param in self.backbone.parameters():
-                param.requires_grad = False
-        elif freeze_mode == "partial":
-            # Freeze all layers except the last few
-            total_layers = len(list(self.backbone.children()))
-            for i, child in enumerate(self.backbone.children()):
-                if i < total_layers - 2:
-                    for param in child.parameters():
-                        param.requires_grad = False
-                else:
-                    for param in child.parameters():
-                        param.requires_grad = True
-        else:
-            raise ValueError(
-                f"Invalid freeze_mode: {freeze_mode}. Choose 'none', 'all', or 'partial'."
-            )
-
-    def preprocess(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Applies L2 normalization and centering. 
-        Crucial for ViT backbones to combat feature anisotropy.
-        """
-        # 1. L2 Normalization (Project to hypersphere)
-        if self.normalize:
-            x = F.normalize(x, p=2, dim=-1)
-
-        # 2. Centering (Subtract running mean)
-        # Note: We update the mean only during training/aggregation
-        if self.training:
-            n = x.size(0)
-            # Ensure running_mean is on the correct device
-            if self.running_mean.device != x.device:
-                self.running_mean = self.running_mean.to(x.device)
-                
-            batch_mean = x.mean(dim=0, keepdim=True)
-            self.running_mean = (self.navg * self.running_mean + n * batch_mean) / (self.navg + n)
-            self.navg += n
-
-        return x - self.running_mean
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if self.backbone:
@@ -108,7 +58,8 @@ class CIFNet(nn.Module):
             x = self.backbone(x)
             x = x.flatten(start_dim=1)
         
-        x = self.preprocess(x)
+        if self.normalize:
+            x = F.normalize(x, p=2, dim=-1)
 
         x = x.to(self.device)
         x = self.classifier(x)
@@ -125,7 +76,10 @@ class CIFNet(nn.Module):
         if self.backbone and not is_embedding:
             x = x.to(self.device)
             x = self.backbone(x).flatten(start_dim=1)
-        x = self.preprocess(x)
+        
+        if self.normalize:
+            x = F.normalize(x, p=2, dim=-1)
+
         x = x.to(self.device)
 
         self.classifier.aggregate_update(x, labels.to(self.device), classes=classes)
